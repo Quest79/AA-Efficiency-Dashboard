@@ -1,0 +1,14 @@
+{
+  "name": "AA Efficiency Dashboard",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": {
+      "label": "AA Efficiency Dashboard",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "pip install -r requirements.txt && python -m playwright install --with-deps chromium",
+  "postStartCommand": "nohup python app.py > /tmp/aa-dashboard.log 2>&1 &",
+  "remoteUser": "vscode"
+}
