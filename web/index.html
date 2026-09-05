@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AA Efficiency Dashboard</title>
+<style>
+:root{
+  --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
+  --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
+  --w-rank:52px;--w-company:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
+  --w-inteff:105px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;
+}
+*{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text)}
+body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+button,input,select{font:inherit}
+.app{padding:20px;min-width:1200px}
+.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:14px}
+h1{font-size:20px;margin:0 0 5px}.sub{font-size:12px;color:var(--muted)}
+.actions{display:flex;gap:8px;align-items:center}
+button{background:#2b2b2b;color:#eee;border:1px solid var(--line2);border-radius:8px;padding:8px 11px;cursor:pointer}
+button:hover{background:#343434}button.primary{background:#30517b;border-color:#587eae}
+button:disabled{opacity:.55;cursor:not-allowed}
+input,select{background:#151515;color:#eee;border:1px solid #4b4b4b;border-radius:7px;padding:8px 9px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.controls{display:grid;grid-template-columns:1fr 1.5fr;gap:12px;margin-bottom:12px}
+.searchline{display:flex;gap:8px}.searchline input{flex:1}
+.label{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.statusline{margin-top:8px;font-size:11px;color:#aaa}.ok{color:var(--good)}.err{color:var(--bad)}
+.builder{display:grid;grid-template-columns:1fr 1fr 1.4fr auto;gap:7px;align-items:end}
+.rulelist,.savedlist,.hidelist{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.chip{display:inline-flex;gap:6px;align-items:center;background:#151515;border:1px solid #454545;border-radius:999px;padding:5px 7px;font-size:11px}
+.chip button{border:0;background:transparent;padding:0 3px;color:#aaa}
+.savebar{display:grid;grid-template-columns:1.2fr 100px 105px auto;gap:7px;margin-top:9px;align-items:end}
+input[type=color]{height:34px;padding:3px}
+.layout{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;margin-bottom:12px}
+.checkgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.check{background:#151515;border:1px solid #444;border-radius:7px;padding:6px 8px;font-size:11px}
+.widthgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.widthbox{background:#151515;border:1px solid #444;border-radius:7px;padding:7px}
+.widthbox .mini{display:flex;justify-content:space-between;font-size:10px;color:#aaa}
+.widthbox input{width:100%;padding:0;border:0}
+.tableShell{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tableScroll{overflow:auto;max-height:calc(100vh - 420px);min-height:420px}
+.table{width:max-content;min-width:100%}
+.header,.row{
+ display:grid;align-items:center;
+ grid-template-columns:var(--w-rank) var(--w-company) var(--w-model) var(--w-int)
+ var(--w-intcost) var(--w-inteff) var(--w-coding) var(--w-codingcost) var(--w-codingeff)
+}
+.header{position:sticky;top:0;z-index:10;background:#252525;border-bottom:2px solid #8a8a8a;font-size:11px;font-weight:700}
+.header>div,.row>div{padding:8px 9px;white-space:nowrap}
+.row{border-bottom:1px solid rgba(255,255,255,.055);min-height:35px;background:var(--row-bg,transparent)}
+.row:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.row.searchmatch{background:linear-gradient(rgba(255,213,79,.30),rgba(255,213,79,.30)),var(--row-bg,transparent);box-shadow:inset 0 0 0 2px rgba(255,213,79,.9)}
+.r{text-align:right;font-variant-numeric:tabular-nums}.model{overflow:hidden;text-overflow:ellipsis}
+.hiddenRow,.hiddenCol{display:none!important}
+.nomatch{color:#777}.codingmatch{color:#e7e7e7}
+.footer{display:flex;gap:15px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line);font-size:10px;color:#aaa}
+.logbox{display:none;margin-top:10px;max-height:210px;overflow:auto;background:#101010;border:1px solid #444;border-radius:7px;padding:8px;font-size:10px;white-space:pre-wrap}
+.logbox.open{display:block}
+@media(max-width:1350px){.controls,.layout{grid-template-columns:1fr}.tableScroll{max-height:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div>
+      <h1>AA EFFICIENCY DASHBOARD</h1>
+      <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
+    </div>
+    <div class="actions">
+      <label class="sub">Min INT <input id="threshold" type="number" min="0" max="100" value="40" style="width:68px"></label>
+      <button id="refresh" class="primary">↻ Refresh AA Data</button>
+      <button id="logsBtn">Diagnostics</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <section class="card">
+      <div class="label">Live search — highlights whole matching rows</div>
+      <div class="searchline"><input id="search" placeholder="Astra, Claude, OpenAI, 61, 0.55"><button id="clearSearch">Clear</button></div>
+      <div class="statusline" id="searchStatus">Search does not hide rows.</div>
+      <div class="logbox" id="logbox"></div>
+    </section>
+
+    <section class="card">
+      <div class="label">Saved highlight filter</div>
+      <div class="builder">
+        <div><div class="label">Field</div><select id="field"></select></div>
+        <div><div class="label">Operator</div><select id="operator"></select></div>
+        <div><div class="label">Value</div><input id="ruleValue"></div>
+        <button id="addRule">Add rule</button>
+      </div>
+      <div class="rulelist" id="ruleList"></div>
+      <div class="savebar">
+        <div><div class="label">Name</div><input id="filterName" placeholder="e.g. Astra"></div>
+        <div><div class="label">Match</div><select id="matchMode"><option value="all">ALL</option><option value="any">ANY</option></select></div>
+        <div><div class="label">Color</div><input id="filterColor" type="color" value="#6b5cff"></div>
+        <button id="saveFilter">Save</button>
+      </div>
+      <div class="savedlist" id="savedList"></div>
+    </section>
+  </div>
+
+  <div class="layout">
+    <section class="card">
+      <div class="label">Hide rows by text/model/company</div>
+      <div class="builder">
+        <div><div class="label">Field</div><select id="hideField"><option value="model">Model</option><option value="creator">Creator</option><option value="any">Any text</option></select></div>
+        <div><div class="label">Operator</div><select id="hideOperator"><option value="contains">contains</option><option value="equals">equals</option><option value="starts">starts with</option><option value="ends">ends with</option></select></div>
+        <div><div class="label">Value</div><input id="hideValue" placeholder="e.g. Gemini"></div>
+        <button id="addHide">Hide matches</button>
+      </div>
+      <div class="hidelist" id="hideList"></div>
+      <div class="label" style="margin-top:10px">Visible columns</div>
+      <div class="checkgrid" id="columnChecks"></div>
+    </section>
+
+    <section class="card">
+      <div class="label">Column widths</div>
+      <div class="widthgrid" id="widthGrid"></div>
+      <div style="display:flex;gap:7px;margin-top:8px"><button id="resetWidths">Reset widths</button><button id="compact">Compact</button></div>
+    </section>
+  </div>
+
+  <section class="tableShell">
+    <div class="tableScroll">
+      <div class="table" id="table">
+        <div class="header">
+          <div class="r" data-col="rank">RK</div>
+          <div data-col="creator">CREATOR</div>
+          <div data-col="model">MODEL</div>
+          <div class="r" data-col="int">INT</div>
+          <div class="r" data-col="int_cost">INT $/TASK</div>
+          <div class="r" data-col="int_eff">INT/$</div>
+          <div class="r" data-col="coding">CODING</div>
+          <div class="r" data-col="coding_cost">CODE $/TASK</div>
+          <div class="r" data-col="coding_eff">CODE/$</div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <span>INT/$ = Intelligence Index ÷ AA Intelligence cost/task</span>
+      <span>CODE/$ = Coding Agent Index ÷ AA coding cost/task</span>
+      <span>N/A means AA did not provide/match that value</span>
+    </div>
+  </section>
+</div>
+
+<script>
+let DATA=[];
+let META={};
+const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1";
+const fields={
+ model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
+ int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},
+ coding:{label:"Coding",type:"number"},coding_cost:{label:"Coding $/Task",type:"number"},coding_eff:{label:"Coding/$",type:"number"}
+};
+const columns=[
+ ["rank","Rank",52,36,100],["creator","Creator",120,70,260],["model","Model",470,220,900],
+ ["int","INT",72,50,140],["int_cost","INT $/Task",105,75,190],["int_eff","INT/$",105,75,190],
+ ["coding","Coding",100,70,180],["coding_cost","Code $/Task",115,80,200],["coding_eff","Code/$",115,80,200]
+];
+const textOps=[["contains","contains"],["equals","equals"],["starts","starts with"],["ends","ends with"],["notcontains","does not contain"]];
+const numOps=[["eq","="],["gte","≥"],["lte","≤"],["gt",">"],["lt","<"],["neq","≠"]];
+const load=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):structuredClone(d)}catch(e){return structuredClone(d)}};
+const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+let filters=load(FKEY,[{id:"astra",name:"Astra",active:true,color:"#0ea5e9",mode:"all",rules:[{field:"model",operator:"contains",value:"Astra"}]},{id:"51",name:"5.1",active:true,color:"#7c3aed",mode:"all",rules:[{field:"model",operator:"contains",value:"5.1"}]}]);
+let hideRules=load(HKEY,[]);
+let colVis=load(CKEY,Object.fromEntries(columns.map(x=>[x[0],true])));
+let widths=load(WKEY,Object.fromEntries(columns.map(x=>[x[0],x[2]])));
+let pending=[];
+
+const fmt=(v,d=1)=>v==null?"N/A":Number(v).toFixed(d);
+const fmtCost=v=>v==null?"N/A":"$"+Number(v).toFixed(2);
+const rowText=x=>[x.rank,x.creator,x.model,x.int,x.int_cost,x.int_eff,x.coding,x.coding_cost,x.coding_eff].join(" ").toLowerCase();
+
+function rgba(hex,a=.25){let h=hex.replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");let n=parseInt(h,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}
+function gradient(colors){if(!colors.length)return"transparent";if(colors.length===1)return rgba(colors[0],.27);let s=[];colors.forEach((c,i)=>{let a=i/colors.length*100,b=(i+1)/colors.length*100;s.push(`${rgba(c,.25)} ${a}%`,`${rgba(c,.25)} ${b}%`)});return`linear-gradient(90deg,${s.join(",")})`}
+
+function ruleMatch(x,r){
+ let a=x[r.field], meta=fields[r.field];
+ if(meta.type==="text"){a=String(a??"").toLowerCase();let b=String(r.value).toLowerCase();return r.operator==="contains"?a.includes(b):r.operator==="equals"?a===b:r.operator==="starts"?a.startsWith(b):r.operator==="ends"?a.endsWith(b):r.operator==="notcontains"?!a.includes(b):false}
+ a=Number(a);let b=Number(r.value);if(!Number.isFinite(a)||!Number.isFinite(b))return false;
+ return r.operator==="eq"?a===b:r.operator==="gte"?a>=b:r.operator==="lte"?a<=b:r.operator==="gt"?a>b:r.operator==="lt"?a<b:r.operator==="neq"?a!==b:false
+}
+function filterMatch(x,f){let t=f.rules.map(r=>ruleMatch(x,r));return f.mode==="any"?t.some(Boolean):t.every(Boolean)}
+function hideMatch(x,r){let a=r.field==="any"?rowText(x):String(x[r.field]??"").toLowerCase(),b=r.value.toLowerCase();return r.operator==="contains"?a.includes(b):r.operator==="equals"?a===b:r.operator==="starts"?a.startsWith(b):a.endsWith(b)}
+
+function renderTable(){
+ document.querySelectorAll("#table .row").forEach(e=>e.remove());
+ const table=document.getElementById("table");
+ DATA.forEach((x,i)=>{
+  const row=document.createElement("div");row.className="row";row.dataset.i=i;
+  row.innerHTML=`<div class="r" data-col="rank">${x.rank??"—"}</div><div data-col="creator">${x.creator||"N/A"}</div><div class="model" data-col="model" title="${(x.model||"").replaceAll('"',"&quot;")}">${x.model}</div><div class="r" data-col="int">${fmt(x.int,0)}</div><div class="r" data-col="int_cost">${fmtCost(x.int_cost)}</div><div class="r" data-col="int_eff">${fmt(x.int_eff,1)}</div><div class="r ${x.coding==null?"nomatch":"codingmatch"}" data-col="coding">${fmt(x.coding,1)}</div><div class="r ${x.coding_cost==null?"nomatch":""}" data-col="coding_cost">${fmtCost(x.coding_cost)}</div><div class="r ${x.coding_eff==null?"nomatch":""}" data-col="coding_eff">${fmt(x.coding_eff,1)}</div>`;
+  table.appendChild(row)
+ });
+ apply();
+}
+function apply(){
+ const q=document.getElementById("search").value.trim().toLowerCase();let n=0;
+ document.querySelectorAll("#table .row").forEach((row,i)=>{
+  const x=DATA[i], colors=filters.filter(f=>f.active&&filterMatch(x,f)).map(f=>f.color);
+  row.style.setProperty("--row-bg",gradient(colors));
+  const sm=q&&rowText(x).includes(q);row.classList.toggle("searchmatch",!!sm);if(sm)n++;
+  row.classList.toggle("hiddenRow",hideRules.some(r=>hideMatch(x,r)));
+ });
+ document.getElementById("searchStatus").innerHTML=q?`<span class="ok">${n}</span> matching row${n===1?"":"s"} highlighted.`:"Search does not hide rows.";
+ document.querySelectorAll("[data-col]").forEach(el=>el.classList.toggle("hiddenCol",colVis[el.dataset.col]===false));
+}
+function updateOps(){
+ let f=document.getElementById("field").value, op=document.getElementById("operator");op.innerHTML="";
+ (fields[f].type==="number"?numOps:textOps).forEach(([v,l])=>op.add(new Option(l,v)));
+ document.getElementById("ruleValue").type=fields[f].type==="number"?"number":"text";
+}
+function renderPending(){let w=document.getElementById("ruleList");w.innerHTML="";pending.forEach((r,i)=>{let e=document.createElement("span");e.className="chip";e.innerHTML=`${fields[r.field].label} ${r.operator} <b>${r.value}</b>`;let b=document.createElement("button");b.textContent="×";b.onclick=()=>{pending.splice(i,1);renderPending()};e.appendChild(b);w.appendChild(e)})}
+function renderFilters(){let w=document.getElementById("savedList");w.innerHTML="";filters.forEach((f,i)=>{let e=document.createElement("span");e.className="chip";let c=document.createElement("input");c.type="checkbox";c.checked=f.active;c.onchange=()=>{f.active=c.checked;save(FKEY,filters);apply()};let sw=document.createElement("span");sw.style.cssText=`width:12px;height:12px;border-radius:3px;background:${f.color};display:inline-block`;let n=document.createElement("span");n.textContent=f.name;let b=document.createElement("button");b.textContent="×";b.onclick=()=>{filters.splice(i,1);save(FKEY,filters);renderFilters();apply()};e.append(c,sw,n,b);w.appendChild(e)})}
+function renderHide(){let w=document.getElementById("hideList");w.innerHTML="";hideRules.forEach((r,i)=>{let e=document.createElement("span");e.className="chip";e.textContent=`${r.field} ${r.operator} ${r.value}`;let b=document.createElement("button");b.textContent="×";b.onclick=()=>{hideRules.splice(i,1);save(HKEY,hideRules);renderHide();apply()};e.appendChild(b);w.appendChild(e)})}
+function setupColumns(){
+ let c=document.getElementById("columnChecks"),wg=document.getElementById("widthGrid");c.innerHTML="";wg.innerHTML="";
+ columns.forEach(([k,l,def,min,max])=>{
+  let lab=document.createElement("label");lab.className="check";let cb=document.createElement("input");cb.type="checkbox";cb.checked=colVis[k]!==false;cb.onchange=()=>{colVis[k]=cb.checked;save(CKEY,colVis);apply()};lab.append(cb,document.createTextNode(" "+l));c.appendChild(lab);
+  let b=document.createElement("div");b.className="widthbox";b.innerHTML=`<div class="mini"><span>${l}</span><span id="wv-${k}">${widths[k]??def}px</span></div><input type="range" min="${min}" max="${max}" step="2" value="${widths[k]??def}">`;b.querySelector("input").oninput=e=>{widths[k]=Number(e.target.value);save(WKEY,widths);applyWidths()};wg.appendChild(b)
+ });applyWidths()
+}
+function applyWidths(){columns.forEach(([k,l,def])=>{document.documentElement.style.setProperty(`--w-${k.replace("_","")}`,`${widths[k]??def}px`);let v=document.getElementById(`wv-${k}`);if(v)v.textContent=`${widths[k]??def}px`})}
+async function loadData(){
+ const d=await fetch("/api/data",{cache:"no-store"}).then(r=>r.json());DATA=d.merged||[];META=d.meta||{};
+ document.getElementById("meta").textContent=DATA.length?`Last refresh: ${META.refreshed_at||"unknown"} · ${META.model_rows??DATA.length} INT rows · ${META.coding_rows??0} coding rows · ${META.coding_matched_to_int_rows??0} matched`:"No cached data yet. Click Refresh AA Data.";
+ renderTable()
+}
+async function pollStatus(){
+ const s=await fetch("/api/status",{cache:"no-store"}).then(r=>r.json());let btn=document.getElementById("refresh");btn.disabled=s.refreshing;btn.textContent=s.refreshing?"Refreshing AA…":"↻ Refresh AA Data";
+ document.getElementById("logbox").textContent=(s.logs||[]).join("\n");
+ if(!s.refreshing&&window.wasRefreshing){window.wasRefreshing=false;await loadData();if(s.last_error)alert("AA refresh failed. Last good data was kept. Open Diagnostics for details.\\n\\n"+s.last_error)}
+ if(s.refreshing)window.wasRefreshing=true
+}
+async function refresh(){let t=Number(document.getElementById("threshold").value)||40;await fetch("/api/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({threshold:t})});window.wasRefreshing=true;pollStatus()}
+document.getElementById("field").innerHTML=Object.entries(fields).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("");
+document.getElementById("field").onchange=updateOps;updateOps();
+document.getElementById("addRule").onclick=()=>{let v=document.getElementById("ruleValue").value.trim();if(!v)return;pending.push({field:document.getElementById("field").value,operator:document.getElementById("operator").value,value:v});document.getElementById("ruleValue").value="";renderPending()};
+document.getElementById("saveFilter").onclick=()=>{let n=document.getElementById("filterName").value.trim();if(!n||!pending.length)return;filters.push({id:Date.now()+"",name:n,active:true,color:document.getElementById("filterColor").value,mode:document.getElementById("matchMode").value,rules:structuredClone(pending)});pending=[];document.getElementById("filterName").value="";save(FKEY,filters);renderPending();renderFilters();apply()};
+document.getElementById("addHide").onclick=()=>{let v=document.getElementById("hideValue").value.trim();if(!v)return;hideRules.push({field:document.getElementById("hideField").value,operator:document.getElementById("hideOperator").value,value:v.toLowerCase()});document.getElementById("hideValue").value="";save(HKEY,hideRules);renderHide();apply()};
+document.getElementById("search").oninput=apply;document.getElementById("clearSearch").onclick=()=>{document.getElementById("search").value="";apply()};
+document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
+document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(columns.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns()};
+document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,coding:82,coding_cost:98,coding_eff:98};save(WKEY,widths);setupColumns()};
+renderPending();renderFilters();renderHide();setupColumns();loadData();pollStatus();setInterval(pollStatus,1000);
+</script>
+</body>
+</html>
