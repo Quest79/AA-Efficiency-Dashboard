@@ -9,6 +9,9 @@ git pull --ff-only
 echo "Installing Python dependencies..."
 python -m pip install -r requirements.txt
 
+echo "Installing Playwright Linux system dependencies..."
+sudo -n python -m playwright install-deps chromium
+
 echo "Ensuring Playwright Chromium exists..."
 python -m playwright install chromium
 
