@@ -9,10 +9,10 @@
   --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
   --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
   --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
-  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--w-codingagent:190px;--row-scale:1;--row-height:35px;
+  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--w-codingagent:190px;--row-scale:1;--row-height:35px;--app-font:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 }
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text);height:100%;overflow:hidden}
-body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+body{font-family:var(--app-font)}
 button,input,select{font:inherit}
 .app{padding:12px;min-width:1200px;height:100vh;display:grid;grid-template-columns:360px minmax(0,1fr);gap:12px;overflow:hidden}
 .sidebar{height:calc(100vh - 24px);min-width:0;display:flex;flex-direction:column;background:#181818;border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -70,6 +70,11 @@ input[type=color]{height:34px;padding:3px}
 .widthbox{background:#151515;border:1px solid #444;border-radius:7px;padding:7px}
 .widthbox .mini{display:flex;justify-content:space-between;font-size:10px;color:#aaa}
 .widthbox input{width:100%;padding:0;border:0}
+.fontgrid{display:grid;grid-template-columns:1fr;gap:7px}
+.fontrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:end}
+.fontrow select{width:100%;min-width:0}
+.fontrow button{white-space:nowrap;padding:7px 9px}
+.fontstatus{margin-top:6px;font-size:9px;color:#888;line-height:1.35}
 .tabbar{flex:0 0 auto;display:flex;gap:6px;margin:0 0 8px;padding:0 2px}
 .tabbtn{border-radius:8px;padding:7px 13px;background:#1d1d1d;border:1px solid #454545;color:#aaa;font-size:11px;font-weight:800;letter-spacing:.04em}
 .tabbtn.active{background:#2c4665;border-color:#6084ad;color:#fff}
@@ -104,7 +109,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.1.0 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.1.1 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -236,6 +241,27 @@ function installSidebarLayout(){
   `;
   scroll.appendChild(scaleCard);
 
+  const fontCard=document.createElement("section");
+  fontCard.className="card";
+  fontCard.innerHTML=`
+    <div class="label">Font</div>
+    <div class="fontgrid">
+      <div class="fontrow">
+        <div>
+          <div class="label">Installed fonts</div>
+          <select id="localFont"><option value="">System default</option></select>
+        </div>
+        <button id="scanFonts" type="button">Scan</button>
+      </div>
+      <div>
+        <div class="label">Google Fonts</div>
+        <select id="googleFont"><option value="">Loading Google Fonts…</option></select>
+      </div>
+    </div>
+    <div class="fontstatus" id="fontStatus">Choose a local or Google font. Selection is saved.</div>
+  `;
+  scroll.appendChild(fontCard);
+
   controls.querySelectorAll(":scope > .card").forEach(card=>scroll.appendChild(card));
   layout.querySelectorAll(":scope > .card").forEach(card=>scroll.appendChild(card));
 
@@ -262,7 +288,7 @@ let DATA=[];
 let INT_DATA=[];
 let CODING_DATA=[];
 let META={};
-const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", ROW_HEIGHT_KEY="aa-live-row-height-v1", TAB_KEY="aa-live-active-tab-v1";
+const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", ROW_HEIGHT_KEY="aa-live-row-height-v1", TAB_KEY="aa-live-active-tab-v1", FONT_KEY="aa-live-font-v1";
 const fields={
  model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
  int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},
@@ -342,6 +368,7 @@ function suggestedCreatorColor(value){
 }
 const load=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):structuredClone(d)}catch(e){return structuredClone(d)}};
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+let fontChoice=load(FONT_KEY,{source:"system",family:""});
 activeTab=load(TAB_KEY,"int");
 let creatorColorOverrides=load(CREATOR_COLOR_KEY,{});
 function creatorStorageKey(name){return String(name??"").trim().toLowerCase()}
@@ -589,6 +616,94 @@ function bindRowHeight(){
   });
   applyRowHeight();
 }
+function setAppFont(source,family,saveChoice=true){
+  const clean=String(family||"").trim();
+  if(source==="google" && clean){
+    let link=document.getElementById("activeGoogleFont");
+    if(!link){
+      link=document.createElement("link");
+      link.id="activeGoogleFont";
+      link.rel="stylesheet";
+      document.head.appendChild(link);
+    }
+    link.href="https://fonts.googleapis.com/css2?family="+encodeURIComponent(clean).replace(/%20/g,"+")+"&display=swap";
+    document.documentElement.style.setProperty("--app-font",JSON.stringify(clean)+", ui-monospace, monospace");
+  }else if(source==="local" && clean){
+    const old=document.getElementById("activeGoogleFont");if(old)old.remove();
+    document.documentElement.style.setProperty("--app-font",JSON.stringify(clean)+", ui-monospace, monospace");
+  }else{
+    const old=document.getElementById("activeGoogleFont");if(old)old.remove();
+    document.documentElement.style.setProperty("--app-font",'ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace');
+    source="system";family="";
+  }
+  if(saveChoice){
+    fontChoice={source,family:clean};
+    save(FONT_KEY,fontChoice);
+  }
+  const status=document.getElementById("fontStatus");
+  if(status)status.textContent=clean?`Using ${clean} (${source})`:"Using system default";
+}
+
+async function scanInstalledFonts(){
+  const select=document.getElementById("localFont");
+  const status=document.getElementById("fontStatus");
+  if(!select)return;
+  if(!window.queryLocalFonts){
+    status.textContent="This browser cannot enumerate installed fonts. Chrome/Edge can; Google Fonts still work here.";
+    return;
+  }
+  try{
+    status.textContent="Reading installed fonts…";
+    const fonts=await window.queryLocalFonts();
+    const families=[...new Set(fonts.map(f=>f.family).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    select.innerHTML='<option value="">System default</option>';
+    for(const family of families){
+      const o=new Option(family,family);o.style.fontFamily=JSON.stringify(family);select.add(o);
+    }
+    if(fontChoice.source==="local" && families.includes(fontChoice.family))select.value=fontChoice.family;
+    status.textContent=`${families.length} installed font families found.`;
+  }catch(e){
+    status.textContent="Installed-font access was blocked or cancelled.";
+  }
+}
+
+async function loadGoogleFonts(){
+  const select=document.getElementById("googleFont");
+  const status=document.getElementById("fontStatus");
+  if(!select)return;
+  try{
+    const payload=await fetch("/api/google-fonts",{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json()});
+    const families=(payload.families||[]).filter(Boolean);
+    select.innerHTML='<option value="">Choose Google Font…</option>';
+    for(const family of families)select.add(new Option(family,family));
+    if(fontChoice.source==="google" && families.includes(fontChoice.family))select.value=fontChoice.family;
+    if(!families.length)throw new Error("No families returned");
+  }catch(e){
+    select.innerHTML='<option value="">Google Fonts unavailable</option>';
+    status.textContent="Could not load the Google Fonts catalog.";
+  }
+}
+
+function bindFonts(){
+  const local=document.getElementById("localFont");
+  const google=document.getElementById("googleFont");
+  const scan=document.getElementById("scanFonts");
+  if(scan)scan.onclick=scanInstalledFonts;
+  if(local)local.onchange=()=>{
+    const family=local.value;
+    if(google)google.value="";
+    setAppFont(family?"local":"system",family,true);
+  };
+  if(google)google.onchange=()=>{
+    const family=google.value;
+    if(!family)return;
+    if(local)local.value="";
+    setAppFont("google",family,true);
+  };
+  setAppFont(fontChoice.source,fontChoice.family,false);
+  loadGoogleFonts();
+}
+
 function syncBuilderCreatorColor(){
   if(document.getElementById("field").value!=="creator")return;
   const value=document.getElementById("ruleValue").value;
@@ -598,9 +713,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.1.0 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.1.1 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.1.0 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.1.1 · SERVER ?";
  }
 }
 async function loadData(){
@@ -647,7 +762,7 @@ document.getElementById("threshold").oninput=()=>{if(activeTab==="int"){renderTa
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
 document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns();renderTable()};
 document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98,coding_agent:150};save(WKEY,widths);setupColumns();renderTable()};
-installSidebarLayout();document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>setActiveTab(b.dataset.tab));bindRowScale();bindRowHeight();renderPending();renderFilters();renderHide();updateTabs();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
+installSidebarLayout();document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>setActiveTab(b.dataset.tab));bindRowScale();bindRowHeight();bindFonts();renderPending();renderFilters();renderHide();updateTabs();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
 </html>
