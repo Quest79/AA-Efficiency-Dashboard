@@ -67,10 +67,12 @@ def run_refresh():
             "logs": result.logs,
         }
 
-        if len(result.models) < 20:
+        priced_models = sum(1 for x in result.models if x.get("cost") is not None)
+        if len(result.models) < 40 or priced_models < 35:
             raise RuntimeError(
-                f"Scrape found only {len(result.models)} Intelligence rows. "
-                "Refusing to replace the last good cache. Diagnostics were saved."
+                f"Scrape looks incomplete: {len(result.models)} Intelligence rows, "
+                f"{priced_models} with Cost per Task. Refusing to replace the last "
+                "good cache. Diagnostics were saved."
             )
         write_cache(payload)
         with state_lock:
