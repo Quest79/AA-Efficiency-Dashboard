@@ -1,4 +1,4 @@
-# AA Efficiency Dashboard v1.0.9
+# AA Efficiency Dashboard v1.1.0
 
 Local Windows dashboard that refreshes live data from Artificial Analysis.
 
@@ -19,10 +19,50 @@ The scraper only uses these two AA pages:
 4. Finds the `N of N models` selector and attempts to select **all models**.
 5. Scrolls through lazy-loaded coding sections so all relevant data requests fire.
 6. Extracts Coding Agent Index and Coding Cost per Task from DOM tables and captured JSON.
-7. Normalizes model-variant names and joins the two datasets.
-8. Calculates:
-   - `INT/$ = Intelligence Index / Intelligence Cost per Task`
-   - `CODE/$ = Coding Agent Index / Coding Cost per Task`
+7. Keeps Intelligence and Coding as independent datasets/tabs. Coding is not filtered by or dependent on Intelligence.
+8. Calculates `INT/# AA Efficiency Dashboard v1.1.0
+
+Local Windows dashboard that refreshes live data from Artificial Analysis.
+
+## Sources
+
+The scraper only uses these two AA pages:
+
+- Intelligence / pricing:
+  https://artificialanalysis.ai/leaderboards/models
+- Coding Agent Index / coding cost:
+  https://artificialanalysis.ai/agents/coding-agents
+
+## What Refresh does
+
+1. Opens the AA Intelligence leaderboard in a headless Chromium browser.
+2. Extracts model, creator, Intelligence Index, and Cost per Task.
+3. Opens the AA Coding Agent page.
+4. Finds the `N of N models` selector and attempts to select **all models**.
+5. Scrolls through lazy-loaded coding sections so all relevant data requests fire.
+6. Extracts Coding Agent Index and Coding Cost per Task from DOM tables and captured JSON.
+ only from Intelligence score/cost and `CODE/# AA Efficiency Dashboard v1.1.0
+
+Local Windows dashboard that refreshes live data from Artificial Analysis.
+
+## Sources
+
+The scraper only uses these two AA pages:
+
+- Intelligence / pricing:
+  https://artificialanalysis.ai/leaderboards/models
+- Coding Agent Index / coding cost:
+  https://artificialanalysis.ai/agents/coding-agents
+
+## What Refresh does
+
+1. Opens the AA Intelligence leaderboard in a headless Chromium browser.
+2. Extracts model, creator, Intelligence Index, and Cost per Task.
+3. Opens the AA Coding Agent page.
+4. Finds the `N of N models` selector and attempts to select **all models**.
+5. Scrolls through lazy-loaded coding sections so all relevant data requests fire.
+6. Extracts Coding Agent Index and Coding Cost per Task from DOM tables and captured JSON.
+ only from Coding score/cost.
 9. Saves the last successful result under:
    `%LOCALAPPDATA%\AAEfficiencyDashboard\data.json`
 
@@ -67,7 +107,9 @@ That folder contains the last AA page HTML and captured JSON payloads. This is i
 ## UI features
 
 - Refresh AA data
-- Configurable minimum INT threshold (default 40)
+- Separate Intelligence and Coding tabs with independent scores/costs
+- Full `leaderboards/models` extraction with lazy-table expansion and multi-table merging
+- Min INT is a GUI-only view filter (default 0); refresh always stores the full AA model leaderboard
 - Separate live Search that highlights entire rows
 - Persistent saved highlight filters
 - Hide rows by model / creator / any text
@@ -82,4 +124,4 @@ That folder contains the last AA page HTML and captured JSON payloads. This is i
 
 ## Version
 
-v1.0.9
+v1.1.0
