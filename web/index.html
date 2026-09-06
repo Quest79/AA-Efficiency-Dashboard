@@ -362,6 +362,7 @@ let filters=load(FKEY,[{id:"astra",name:"Astra",active:true,color:"#0ea5e9",auto
 let hideRules=load(HKEY,[]);
 let colVis=load(CKEY,Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],true])));
 let widths=load(WKEY,Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],x[2]])));
+let rowScale=Number(load(ROW_SCALE_KEY,1))||1;
 let pending=[];
 
 const fmt=(v,d=1)=>v==null?"N/A":Number(v).toFixed(d);
