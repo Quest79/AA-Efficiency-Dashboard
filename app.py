@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
-VERSION = "1.0.9"
+VERSION = "1.1.0"
 
 def resource_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -49,7 +49,7 @@ def write_cache(data):
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(CACHE_FILE)
 
-def run_refresh(threshold=40):
+def run_refresh():
     with state_lock:
         if state["refreshing"]:
             return
@@ -58,7 +58,7 @@ def run_refresh(threshold=40):
         state["logs"] = ["Starting live Artificial Analysis refresh..."]
     try:
         from scraper import scrape_all
-        result = scrape_all(DATA_DIR, headless=True, threshold=float(threshold))
+        result = scrape_all(DATA_DIR, headless=True)
         payload = {
             "models": result.models,
             "coding": result.coding,
@@ -141,11 +141,10 @@ class Handler(BaseHTTPRequestHandler):
                 req = json.loads(body or b"{}")
             except Exception:
                 req = {}
-            threshold = req.get("threshold", 40)
             with state_lock:
                 if state["refreshing"]:
                     return self._json({"ok": False, "message": "Refresh already running"}, 409)
-            threading.Thread(target=run_refresh, args=(threshold,), daemon=True).start()
+            threading.Thread(target=run_refresh, daemon=True).start()
             return self._json({"ok": True, "message": "Refresh started"})
         self.send_error(404)
 
