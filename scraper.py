@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import math
 import re
+import subprocess
+import sys
 import time
 import traceback
 from dataclasses import dataclass, asdict
@@ -461,21 +463,50 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
     with sync_playwright() as p:
         browser = None
         launch_errors = []
-        for kwargs in (
-            {"channel": "msedge", "headless": headless},
-            {"channel": "chrome", "headless": headless},
-            {"headless": headless},
-        ):
+
+        def try_launch_browser():
+            nonlocal browser
+            for kwargs in (
+                {"channel": "msedge", "headless": headless},
+                {"channel": "chrome", "headless": headless},
+                {"headless": headless},
+            ):
+                try:
+                    browser = p.chromium.launch(**kwargs)
+                    log(f"Launched Chromium browser ({kwargs.get('channel','Playwright Chromium')})")
+                    return True
+                except Exception as e:
+                    launch_errors.append(str(e))
+            return False
+
+        if not try_launch_browser():
+            # Codespaces/containers can have the Python Playwright package but not
+            # its browser payload. Repair that automatically instead of making
+            # the user drop into a terminal.
+            log("No usable Chromium executable found; installing Playwright Chromium automatically...")
             try:
-                browser = p.chromium.launch(**kwargs)
-                log(f"Launched Chromium browser ({kwargs.get('channel','Playwright Chromium')})")
-                break
+                proc = subprocess.run(
+                    [sys.executable, "-m", "playwright", "install", "chromium"],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    check=False,
+                )
+                if proc.stdout.strip():
+                    log(proc.stdout.strip()[-4000:])
+                if proc.stderr.strip():
+                    log(proc.stderr.strip()[-4000:])
+                log(f"Playwright Chromium installer exit code: {proc.returncode}")
             except Exception as e:
-                launch_errors.append(str(e))
+                log(f"Automatic Chromium install failed: {e}")
+
+            launch_errors.clear()
+            try_launch_browser()
+
         if browser is None:
             raise RuntimeError(
-                "Could not launch Edge/Chrome/Playwright Chromium. "
-                "Run Install-AA-Dashboard.bat once.\n" + "\n".join(launch_errors[-3:])
+                "Could not launch Playwright Chromium even after automatic repair.\n"
+                + "\n".join(launch_errors[-3:])
             )
 
         context = browser.new_context(
