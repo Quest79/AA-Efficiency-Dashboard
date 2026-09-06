@@ -736,7 +736,7 @@ def match_coding(int_model: str, coding_by_norm: dict[str, dict[str, Any]]) -> d
                 candidates.append(val)
     return candidates[0] if len(candidates) == 1 else None
 
-def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> ScrapeResult:
+def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0) -> ScrapeResult:
     from playwright.sync_api import sync_playwright
 
     logs: list[str] = []
