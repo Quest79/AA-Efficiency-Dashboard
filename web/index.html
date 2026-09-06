@@ -9,7 +9,7 @@
   --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
   --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
   --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
-  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--w-codingagent:190px;--row-scale:1;
+  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--w-codingagent:190px;--row-scale:1;--row-height:35px;
 }
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text);height:100%;overflow:hidden}
 body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
@@ -79,8 +79,9 @@ input[type=color]{height:34px;padding:3px}
 .table{width:max-content;min-width:100%}
 .header,.row{display:grid;align-items:center}
 .header{position:sticky;top:0;z-index:10;background:#252525;border-bottom:2px solid #8a8a8a;font-size:calc(11px * var(--row-scale));font-weight:700}
-.header>div,.row>div{padding:calc(8px * var(--row-scale)) calc(9px * var(--row-scale));white-space:nowrap}
-.row{border-bottom:1px solid rgba(255,255,255,.055);min-height:calc(35px * var(--row-scale));font-size:calc(16px * var(--row-scale));background:var(--row-bg,transparent)}
+.header>div{padding:calc(8px * var(--row-scale)) calc(9px * var(--row-scale));white-space:nowrap}
+.row>div{padding:0 calc(9px * var(--row-scale));white-space:nowrap;min-width:0;overflow:hidden}
+.row{border-bottom:1px solid rgba(255,255,255,.055);height:var(--row-height);min-height:var(--row-height);font-size:calc(16px * var(--row-scale));background:var(--row-bg,transparent)}
 .row:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
 .row.searchmatch{background:linear-gradient(rgba(255,213,79,.30),rgba(255,213,79,.30)),var(--row-bg,transparent);box-shadow:inset 0 0 0 2px rgba(255,213,79,.9)}
 .r{text-align:right;font-variant-numeric:tabular-nums}.model{overflow:hidden;text-overflow:ellipsis}
@@ -225,8 +226,12 @@ function installSidebarLayout(){
   scaleCard.innerHTML=`
     <div class="label">Row / Table Scale</div>
     <div class="widthbox">
-      <div class="mini"><span>Rows + contents</span><span id="rowScaleValue">1.00×</span></div>
+      <div class="mini"><span>Contents scale</span><span id="rowScaleValue">1.00×</span></div>
       <input id="rowScale" type="range" min="0.50" max="2.00" step="0.05" value="1">
+    </div>
+    <div class="widthbox" style="margin-top:7px">
+      <div class="mini"><span>Row height</span><span id="rowHeightValue">35px</span></div>
+      <input id="rowHeight" type="range" min="24" max="80" step="1" value="35">
     </div>
   `;
   scroll.appendChild(scaleCard);
@@ -257,7 +262,7 @@ let DATA=[];
 let INT_DATA=[];
 let CODING_DATA=[];
 let META={};
-const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", TAB_KEY="aa-live-active-tab-v1";
+const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", ROW_HEIGHT_KEY="aa-live-row-height-v1", TAB_KEY="aa-live-active-tab-v1";
 const fields={
  model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
  int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},
@@ -363,6 +368,7 @@ let hideRules=load(HKEY,[]);
 let colVis=load(CKEY,Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],true])));
 let widths=load(WKEY,Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],x[2]])));
 let rowScale=Number(load(ROW_SCALE_KEY,1))||1;
+let rowHeight=Number(load(ROW_HEIGHT_KEY,35))||35;
 let pending=[];
 
 const fmt=(v,d=1)=>v==null?"N/A":Number(v).toFixed(d);
@@ -564,6 +570,25 @@ function bindRowScale(){
   });
   applyRowScale();
 }
+function applyRowHeight(){
+  rowHeight=Math.max(24,Math.min(80,Math.round(Number(rowHeight)||35)));
+  document.documentElement.style.setProperty("--row-height",`${rowHeight}px`);
+  const slider=document.getElementById("rowHeight");
+  const value=document.getElementById("rowHeightValue");
+  if(slider)slider.value=String(rowHeight);
+  if(value)value.textContent=`${rowHeight}px`;
+}
+function bindRowHeight(){
+  const slider=document.getElementById("rowHeight");
+  if(!slider)return;
+  slider.value=String(rowHeight);
+  slider.addEventListener("input",e=>{
+    rowHeight=Number(e.target.value);
+    save(ROW_HEIGHT_KEY,rowHeight);
+    applyRowHeight();
+  });
+  applyRowHeight();
+}
 function syncBuilderCreatorColor(){
   if(document.getElementById("field").value!=="creator")return;
   const value=document.getElementById("ruleValue").value;
@@ -622,7 +647,7 @@ document.getElementById("threshold").oninput=()=>{if(activeTab==="int"){renderTa
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
 document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns();renderTable()};
 document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98,coding_agent:150};save(WKEY,widths);setupColumns();renderTable()};
-installSidebarLayout();document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>setActiveTab(b.dataset.tab));bindRowScale();renderPending();renderFilters();renderHide();updateTabs();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
+installSidebarLayout();document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>setActiveTab(b.dataset.tab));bindRowScale();bindRowHeight();renderPending();renderFilters();renderHide();updateTabs();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
 </html>
