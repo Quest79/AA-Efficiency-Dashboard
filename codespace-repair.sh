@@ -4,7 +4,6 @@ set -euo pipefail
 REPO_DIR="/workspaces/AA-Efficiency-Dashboard"
 cd "$REPO_DIR" 2>/dev/null || cd "$(dirname "$0")"
 
-# Self-update first, then restart this script from the newly pulled copy.
 if [[ "${1:-}" != "--after-update" ]]; then
   echo
   echo "=== Updating AA Efficiency Dashboard ==="
@@ -17,7 +16,16 @@ echo "=== Installing Python dependencies ==="
 python -m pip install -r requirements.txt
 
 echo
-echo "=== Installing system Chromium + all required Linux libraries ==="
+echo "=== Fixing broken apt sources if needed ==="
+for f in /etc/apt/sources.list.d/*; do
+  if [ -f "$f" ] && grep -qs "dl.yarnpkg.com" "$f"; then
+    echo "Disabling broken Yarn apt source: $f"
+    sudo mv "$f" "$f.aa-disabled"
+  fi
+done
+
+echo
+echo "=== Installing system Chromium + required Linux libraries ==="
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y chromium
 
