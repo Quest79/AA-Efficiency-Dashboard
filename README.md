@@ -1,4 +1,4 @@
-# AA Efficiency Dashboard v1.0.7
+# AA Efficiency Dashboard v1.0.8
 
 Local Windows dashboard that refreshes live data from Artificial Analysis.
 
@@ -73,6 +73,7 @@ That folder contains the last AA page HTML and captured JSON payloads. This is i
 - Hide rows by model / creator / any text
 - Hide/show columns
 - Adjustable persistent column widths
+- Left-side scrolling control panel so the leaderboard uses full viewport height
 - Creator-colored INT Level blocks (1 block per INT point starting at 40)
 - INT efficiency and coding efficiency shown side by side
 - Last-refresh timestamp
@@ -80,4 +81,4 @@ That folder contains the last AA page HTML and captured JSON payloads. This is i
 
 ## Version
 
-v1.0.7
+v1.0.8
