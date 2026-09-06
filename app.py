@@ -10,6 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
 VERSION = "1.0.0"
@@ -148,13 +149,54 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "message": "Refresh started"})
         self.send_error(404)
 
+def _dashboard_urls(host: str, port: int) -> tuple[str, str]:
+    local_url = f"http://{host}:{port}/"
+    codespace = os.environ.get("CODESPACE_NAME")
+    if codespace:
+        domain = os.environ.get(
+            "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN",
+            "app.github.dev",
+        )
+        public_url = f"https://{codespace}-{port}.{domain}/"
+    else:
+        public_url = local_url
+    return local_url, public_url
+
+
+def _existing_dashboard_is_running(local_url: str) -> bool:
+    try:
+        with urlopen(local_url + "api/info", timeout=1.5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return bool(payload.get("version"))
+    except Exception:
+        return False
+
+
 def main():
     host = "127.0.0.1"
     port = 8765
-    server = ThreadingHTTPServer((host, port), Handler)
-    url = f"http://{host}:{port}/"
+    local_url, public_url = _dashboard_urls(host, port)
 
-    threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+    try:
+        server = ThreadingHTTPServer((host, port), Handler)
+    except OSError as e:
+        # Codespaces starts the dashboard automatically. If the user runs
+        # python app.py again, do not crash just because our own server is
+        # already listening on 8765.
+        if getattr(e, "errno", None) in (48, 98, 10048) and _existing_dashboard_is_running(local_url):
+            print("")
+            print("AA Efficiency Dashboard is already running.")
+            print(f"Open it here: {public_url}")
+            print("")
+            try:
+                webbrowser.open(public_url)
+            except Exception:
+                pass
+            return
+        raise
+
+    threading.Timer(0.8, lambda: webbrowser.open(public_url)).start()
+    print(f"AA Efficiency Dashboard: {public_url}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
