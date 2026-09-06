@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 
 def resource_dir() -> Path:
     if getattr(sys, "frozen", False):
