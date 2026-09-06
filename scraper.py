@@ -483,8 +483,22 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
             # Codespaces/containers can have the Python Playwright package but not
             # its browser payload. Repair that automatically instead of making
             # the user drop into a terminal.
-            log("No usable Chromium executable found; installing Playwright Chromium automatically...")
+            log("No usable Chromium launch; repairing Playwright browser + Linux dependencies automatically...")
             try:
+                if sys.platform.startswith("linux"):
+                    dep_proc = subprocess.run(
+                        ["sudo", "-n", sys.executable, "-m", "playwright", "install-deps", "chromium"],
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                        check=False,
+                    )
+                    if dep_proc.stdout.strip():
+                        log(dep_proc.stdout.strip()[-4000:])
+                    if dep_proc.stderr.strip():
+                        log(dep_proc.stderr.strip()[-4000:])
+                    log(f"Playwright Linux dependency installer exit code: {dep_proc.returncode}")
+
                 proc = subprocess.run(
                     [sys.executable, "-m", "playwright", "install", "chromium"],
                     capture_output=True,
@@ -498,7 +512,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
                     log(proc.stderr.strip()[-4000:])
                 log(f"Playwright Chromium installer exit code: {proc.returncode}")
             except Exception as e:
-                log(f"Automatic Chromium install failed: {e}")
+                log(f"Automatic Playwright repair failed: {e}")
 
             launch_errors.clear()
             try_launch_browser()
