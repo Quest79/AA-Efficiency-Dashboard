@@ -8,7 +8,7 @@
       "onAutoForward": "openBrowser"
     }
   },
-  "postCreateCommand": "python -m pip install -r requirements.txt && python -m playwright install --with-deps chromium && python -m playwright install chromium",
+  "postCreateCommand": "python -m pip install -r requirements.txt && sudo -n python -m playwright install-deps chromium && python -m playwright install chromium",
   "postStartCommand": "python -m playwright install chromium && (pkill -f 'python app.py' || true) && nohup python app.py > /tmp/aa-dashboard.log 2>&1 &",
   "remoteUser": "vscode"
 }
