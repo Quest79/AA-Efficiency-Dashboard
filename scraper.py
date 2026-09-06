@@ -508,7 +508,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
                     apt_proc = subprocess.run(
                         [
                             "sudo", "-n", "bash", "-lc",
-                            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y chromium"
+                            "for f in /etc/apt/sources.list.d/*; do if [ -f \"$f\" ] && grep -qs 'dl.yarnpkg.com' \"$f\"; then mv \"$f\" \"$f.aa-disabled\"; fi; done; apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y chromium"
                         ],
                         capture_output=True,
                         text=True,
