@@ -10,10 +10,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 def resource_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -29,12 +29,50 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_FILE = DATA_DIR / "data.json"
 
 state_lock = threading.Lock()
+google_fonts_lock = threading.Lock()
+google_fonts_cache = {"families": [], "loaded_at": 0.0}
 state = {
     "refreshing": False,
     "last_error": None,
     "logs": [],
     "version": VERSION,
 }
+
+def get_google_fonts():
+    import time
+    now = time.time()
+    with google_fonts_lock:
+        cached = google_fonts_cache.get("families") or []
+        if cached and now - float(google_fonts_cache.get("loaded_at", 0)) < 21600:
+            return cached
+
+    req = Request(
+        "https://fonts.google.com/metadata/fonts",
+        headers={
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json,text/plain,*/*",
+        },
+    )
+    with urlopen(req, timeout=20) as response:
+        raw = response.read().decode("utf-8", errors="replace").strip()
+
+    # Some Google metadata endpoints may prefix JSON with an anti-XSSI guard.
+    if raw.startswith(")]}'"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[4:]
+
+    payload = json.loads(raw)
+    families = []
+    for item in payload.get("familyMetadataList", []):
+        family = str(item.get("family") or "").strip()
+        if family:
+            families.append(family)
+    families = sorted(set(families), key=str.casefold)
+
+    with google_fonts_lock:
+        google_fonts_cache["families"] = families
+        google_fonts_cache["loaded_at"] = now
+    return families
+
 
 def read_cache():
     if not CACHE_FILE.exists():
@@ -123,6 +161,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(WEB_DIR / "index.html", "text/html; charset=utf-8")
         if p.path == "/api/data":
             return self._json(read_cache())
+        if p.path == "/api/google-fonts":
+            try:
+                return self._json({"families": get_google_fonts()})
+            except Exception as e:
+                return self._json({"families": [], "error": str(e)}, 502)
         if p.path == "/api/status":
             with state_lock:
                 return self._json(dict(state))
