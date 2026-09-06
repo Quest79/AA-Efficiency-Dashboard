@@ -8,7 +8,7 @@
       "onAutoForward": "openBrowser"
     }
   },
-  "postCreateCommand": "python -m pip install -r requirements.txt && sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y chromium && python -m playwright install chromium",
+  "postCreateCommand": "python -m pip install -r requirements.txt && sudo bash -lc 'for f in /etc/apt/sources.list.d/*; do if [ -f \"$f\" ] && grep -qs \"dl.yarnpkg.com\" \"$f\"; then mv \"$f\" \"$f.aa-disabled\"; fi; done; apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y chromium' && python -m playwright install chromium",
   "postStartCommand": "(pkill -f 'python app.py' || true) && nohup python app.py > /tmp/aa-dashboard.log 2>&1 &",
   "remoteUser": "vscode"
 }
