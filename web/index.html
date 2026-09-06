@@ -644,6 +644,26 @@ function setAppFont(source,family,saveChoice=true){
   if(status)status.textContent=clean?`Using ${clean} (${source})`:"Using system default";
 }
 
+function populateDetectedLocalFonts(){
+  const select=document.getElementById("localFont");
+  if(!select)return;
+  const candidates=[
+    "Arial","Arial Black","Bahnschrift","Calibri","Cambria","Candara","Cascadia Code","Cascadia Mono",
+    "Comic Sans MS","Consolas","Constantia","Corbel","Courier New","Franklin Gothic Medium","Gabriola",
+    "Gadugi","Georgia","Impact","Lucida Console","Lucida Sans Unicode","Malgun Gothic","Microsoft JhengHei",
+    "Microsoft YaHei","MS Gothic","MS PGothic","MV Boli","Nirmala UI","Palatino Linotype","Segoe Print",
+    "Segoe Script","Segoe UI","Segoe UI Emoji","Segoe UI Historic","Segoe UI Symbol","SimSun","Tahoma",
+    "Times New Roman","Trebuchet MS","Verdana","Yu Gothic","JetBrains Mono","Fira Code","Source Code Pro",
+    "IBM Plex Mono","Roboto Mono","Ubuntu Mono","Iosevka","Hack","Menlo","Monaco"
+  ];
+  const found=candidates.filter(f=>{
+    try{return document.fonts.check('12px '+JSON.stringify(f))}catch(e){return false}
+  });
+  select.innerHTML='<option value="">System default</option>';
+  for(const family of found)select.add(new Option(family,family));
+  if(fontChoice.source==="local" && found.includes(fontChoice.family))select.value=fontChoice.family;
+}
+
 async function scanInstalledFonts(){
   const select=document.getElementById("localFont");
   const status=document.getElementById("fontStatus");
@@ -700,6 +720,7 @@ function bindFonts(){
     if(local)local.value="";
     setAppFont("google",family,true);
   };
+  populateDetectedLocalFonts();
   setAppFont(fontChoice.source,fontChoice.family,false);
   loadGoogleFonts();
 }
