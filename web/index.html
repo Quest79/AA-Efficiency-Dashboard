@@ -30,8 +30,14 @@ input,select{background:#151515;color:#eee;border:1px solid #4b4b4b;border-radiu
 .statusline{margin-top:8px;font-size:11px;color:#aaa}.ok{color:var(--good)}.err{color:var(--bad)}
 .builder{display:grid;grid-template-columns:1fr 1fr 1.4fr auto;gap:7px;align-items:end}
 .rulelist,.savedlist,.hidelist{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.chip{display:inline-flex;gap:6px;align-items:center;background:#151515;border:1px solid #454545;border-radius:999px;padding:5px 7px;font-size:11px}
+.chip{display:inline-flex;gap:6px;align-items:center;background:#151515;border:1px solid #454545;border-radius:999px;padding:5px 7px;font-size:11px;max-width:100%}
 .chip button{border:0;background:transparent;padding:0 3px;color:#aaa}
+.chipcolor{width:18px;height:18px;padding:0;border:1px solid #5a6572;border-radius:4px;background:transparent;cursor:pointer;overflow:hidden}
+.chipcolor::-webkit-color-swatch-wrapper{padding:0}.chipcolor::-webkit-color-swatch{border:0;border-radius:3px}
+.chipcolor::-moz-color-swatch{border:0;border-radius:3px}
+.chipname{cursor:text;padding:1px 4px;border-radius:5px;display:inline-block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipname:hover{background:#232323}
+.chipedit{padding:4px 6px!important;font-size:11px;min-width:78px;max-width:220px;border-radius:6px}
 .savebar{display:grid;grid-template-columns:1.2fr 100px 105px auto;gap:7px;margin-top:9px;align-items:end}
 input[type=color]{height:34px;padding:3px}
 .layout{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;margin-bottom:12px}
@@ -67,7 +73,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.3 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.4 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -100,6 +106,7 @@ input[type=color]{height:34px;padding:3px}
         <div><div class="label">Color</div><input id="filterColor" type="color" value="#6b5cff"></div>
         <button id="saveFilter">Save</button>
       </div>
+      <div class="sub" style="margin-top:7px">Creator filters get preset colors. Click a saved color square to change it; click the saved filter text to rename it.</div>
       <div class="savedlist" id="savedList"></div>
     </section>
   </div>
@@ -165,9 +172,64 @@ const columns=[
 ];
 const textOps=[["contains","contains"],["equals","equals"],["starts","starts with"],["ends","ends with"],["notcontains","does not contain"]];
 const numOps=[["eq","="],["gte","≥"],["lte","≤"],["gt",">"],["lt","<"],["neq","≠"]];
+
+const CREATOR_COLORS={
+  openai:"#2f6bff",
+  anthropic:"#f28c28",
+  google:"#4285f4",
+  spacexai:"#ef4444",
+  xai:"#ef4444",
+  meta:"#8b5cf6",
+  deepseek:"#14b8a6",
+  alibaba:"#f59e0b",
+  qwen:"#f59e0b",
+  zai:"#22c55e",
+  glm:"#22c55e",
+  kimi:"#06b6d4",
+  moonshot:"#06b6d4",
+  mistral:"#f97316",
+  minimax:"#ec4899",
+  tencent:"#3b82f6",
+  xiaomi:"#f97316",
+  microsoft:"#60a5fa",
+  amazon:"#f59e0b",
+  cohere:"#10b981",
+  sapiensai:"#a855f7",
+  motiftechnologies:"#84cc16",
+  mbzuaiinstituteoffoundationmodels:"#0ea5e9",
+  apodex:"#fb923c",
+  multiversecomputing:"#a78bfa",
+  thinkingmachines:"#94a3b8",
+  nexagi:"#fb7185",
+  upstage:"#f97316",
+  chinamobile:"#ef4444"
+};
+function creatorColorKey(text){
+  const t=String(text??"").toLowerCase().replace(/[^a-z0-9]+/g,"");
+  if(!t)return null;
+  const aliases={
+    "openai":"openai","anthropic":"anthropic","google":"google","googledeepmind":"google","deepmind":"google",
+    "spacexai":"spacexai","xai":"xai","meta":"meta","deepseek":"deepseek",
+    "alibaba":"alibaba","qwen":"qwen","zai":"zai","zhipu":"zai","glm":"glm",
+    "kimi":"kimi","moonshot":"moonshot","moonshotai":"moonshot",
+    "mistral":"mistral","minimax":"minimax","tencent":"tencent","xiaomi":"xiaomi",
+    "microsoft":"microsoft","amazon":"amazon","aws":"amazon","cohere":"cohere",
+    "sapiensai":"sapiensai","motiftechnologies":"motiftechnologies","mbzuaiinstituteoffoundationmodels":"mbzuaiinstituteoffoundationmodels",
+    "apodex":"apodex","multiversecomputing":"multiversecomputing","thinkingmachines":"thinkingmachines",
+    "nexagi":"nexagi","upstage":"upstage","chinamobile":"chinamobile"
+  };
+  for(const [needle,key] of Object.entries(aliases)){
+    if(t===needle || t.includes(needle) || needle.includes(t)) return key;
+  }
+  return null;
+}
+function suggestedCreatorColor(value){
+  const key=creatorColorKey(value);
+  return key?CREATOR_COLORS[key]:null;
+}
 const load=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):structuredClone(d)}catch(e){return structuredClone(d)}};
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
-let filters=load(FKEY,[{id:"astra",name:"Astra",active:true,color:"#0ea5e9",mode:"all",rules:[{field:"model",operator:"contains",value:"Astra"}]},{id:"51",name:"5.1",active:true,color:"#7c3aed",mode:"all",rules:[{field:"model",operator:"contains",value:"5.1"}]}]);
+let filters=load(FKEY,[{id:"astra",name:"Astra",active:true,color:"#0ea5e9",autoColor:false,mode:"all",rules:[{field:"model",operator:"contains",value:"Astra"}]},{id:"51",name:"5.1",active:true,color:"#7c3aed",autoColor:false,mode:"all",rules:[{field:"model",operator:"contains",value:"5.1"}]}]).map(f=>({autoColor:true,...f}));
 let hideRules=load(HKEY,[]);
 let colVis=load(CKEY,Object.fromEntries(columns.map(x=>[x[0],true])));
 let widths=load(WKEY,Object.fromEntries(columns.map(x=>[x[0],x[2]])));
@@ -214,9 +276,45 @@ function updateOps(){
  let f=document.getElementById("field").value, op=document.getElementById("operator");op.innerHTML="";
  (fields[f].type==="number"?numOps:textOps).forEach(([v,l])=>op.add(new Option(l,v)));
  document.getElementById("ruleValue").type=fields[f].type==="number"?"number":"text";
+ syncBuilderCreatorColor();
 }
 function renderPending(){let w=document.getElementById("ruleList");w.innerHTML="";pending.forEach((r,i)=>{let e=document.createElement("span");e.className="chip";e.innerHTML=`${fields[r.field].label} ${r.operator} <b>${r.value}</b>`;let b=document.createElement("button");b.textContent="×";b.onclick=()=>{pending.splice(i,1);renderPending()};e.appendChild(b);w.appendChild(e)})}
-function renderFilters(){let w=document.getElementById("savedList");w.innerHTML="";filters.forEach((f,i)=>{let e=document.createElement("span");e.className="chip";let c=document.createElement("input");c.type="checkbox";c.checked=f.active;c.onchange=()=>{f.active=c.checked;save(FKEY,filters);apply()};let sw=document.createElement("span");sw.style.cssText=`width:12px;height:12px;border-radius:3px;background:${f.color};display:inline-block`;let n=document.createElement("span");n.textContent=f.name;let b=document.createElement("button");b.textContent="×";b.onclick=()=>{filters.splice(i,1);save(FKEY,filters);renderFilters();apply()};e.append(c,sw,n,b);w.appendChild(e)})}
+function editSavedFilterName(filter,label){
+ if(label.dataset.editing==="1")return;
+ label.dataset.editing="1";
+ const input=document.createElement("input");
+ input.className="chipedit";
+ input.value=filter.name||"";
+ const finish=(saveIt)=>{
+   if(saveIt){
+     const v=input.value.trim();
+     if(v)filter.name=v;
+     save(FKEY,filters);
+   }
+   renderFilters();
+   apply();
+ };
+ input.addEventListener("keydown",e=>{
+   if(e.key==="Enter"){e.preventDefault();finish(true)}
+   if(e.key==="Escape"){e.preventDefault();finish(false)}
+ });
+ input.addEventListener("blur",()=>finish(true),{once:true});
+ label.replaceWith(input);
+ input.focus();
+ input.select();
+}
+function renderFilters(){
+ let w=document.getElementById("savedList");w.innerHTML="";
+ filters.forEach((f,i)=>{
+   let e=document.createElement("span");e.className="chip";
+   let c=document.createElement("input");c.type="checkbox";c.checked=f.active;c.onchange=()=>{f.active=c.checked;save(FKEY,filters);apply()};
+   let sw=document.createElement("input");sw.type="color";sw.className="chipcolor";sw.value=f.color||"#6b5cff";sw.title="Click to change highlight color";
+   sw.oninput=()=>{f.color=sw.value;f.autoColor=false;save(FKEY,filters);apply()};
+   let n=document.createElement("span");n.className="chipname";n.textContent=f.name;n.title="Click to rename";n.onclick=()=>editSavedFilterName(f,n);
+   let b=document.createElement("button");b.textContent="×";b.title="Delete";b.onclick=()=>{filters.splice(i,1);save(FKEY,filters);renderFilters();apply()};
+   e.append(c,sw,n,b);w.appendChild(e);
+ })
+}
 function renderHide(){let w=document.getElementById("hideList");w.innerHTML="";hideRules.forEach((r,i)=>{let e=document.createElement("span");e.className="chip";e.textContent=`${r.field} ${r.operator} ${r.value}`;let b=document.createElement("button");b.textContent="×";b.onclick=()=>{hideRules.splice(i,1);save(HKEY,hideRules);renderHide();apply()};e.appendChild(b);w.appendChild(e)})}
 function setupColumns(){
  let c=document.getElementById("columnChecks"),wg=document.getElementById("widthGrid");c.innerHTML="";wg.innerHTML="";
@@ -226,12 +324,17 @@ function setupColumns(){
  });applyWidths()
 }
 function applyWidths(){columns.forEach(([k,l,def])=>{document.documentElement.style.setProperty(`--w-${k.replace("_","")}`,`${widths[k]??def}px`);let v=document.getElementById(`wv-${k}`);if(v)v.textContent=`${widths[k]??def}px`})}
+function syncBuilderCreatorColor(){
+  if(document.getElementById("field").value!=="creator")return;
+  const preset=suggestedCreatorColor(document.getElementById("ruleValue").value);
+  if(preset)document.getElementById("filterColor").value=preset;
+}
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.3 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.0.4 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.3 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.0.4 · SERVER ?";
  }
 }
 async function loadData(){
@@ -248,8 +351,9 @@ async function pollStatus(){
 async function refresh(){let t=Number(document.getElementById("threshold").value)||40;await fetch("/api/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({threshold:t})});window.wasRefreshing=true;pollStatus()}
 document.getElementById("field").innerHTML=Object.entries(fields).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("");
 document.getElementById("field").onchange=updateOps;updateOps();
-document.getElementById("addRule").onclick=()=>{let v=document.getElementById("ruleValue").value.trim();if(!v)return;pending.push({field:document.getElementById("field").value,operator:document.getElementById("operator").value,value:v});document.getElementById("ruleValue").value="";renderPending()};
-document.getElementById("saveFilter").onclick=()=>{let n=document.getElementById("filterName").value.trim();if(!n||!pending.length)return;filters.push({id:Date.now()+"",name:n,active:true,color:document.getElementById("filterColor").value,mode:document.getElementById("matchMode").value,rules:structuredClone(pending)});pending=[];document.getElementById("filterName").value="";save(FKEY,filters);renderPending();renderFilters();apply()};
+document.getElementById("ruleValue").addEventListener("input",syncBuilderCreatorColor);
+document.getElementById("addRule").onclick=()=>{let v=document.getElementById("ruleValue").value.trim();if(!v)return;const field=document.getElementById("field").value;pending.push({field,operator:document.getElementById("operator").value,value:v});if(field==="creator"){const preset=suggestedCreatorColor(v);if(preset)document.getElementById("filterColor").value=preset}document.getElementById("ruleValue").value="";renderPending()};
+document.getElementById("saveFilter").onclick=()=>{let n=document.getElementById("filterName").value.trim();if(!n||!pending.length)return;let color=document.getElementById("filterColor").value;let autoColor=false;const creatorRule=pending.find(r=>r.field==="creator");if(creatorRule){const preset=suggestedCreatorColor(creatorRule.value);if(preset){color=preset;autoColor=true}}filters.push({id:Date.now()+"",name:n,active:true,color,autoColor,mode:document.getElementById("matchMode").value,rules:structuredClone(pending)});pending=[];document.getElementById("filterName").value="";save(FKEY,filters);renderPending();renderFilters();apply()};
 document.getElementById("addHide").onclick=()=>{let v=document.getElementById("hideValue").value.trim();if(!v)return;hideRules.push({field:document.getElementById("hideField").value,operator:document.getElementById("hideOperator").value,value:v.toLowerCase()});document.getElementById("hideValue").value="";save(HKEY,hideRules);renderHide();apply()};
 document.getElementById("search").oninput=apply;document.getElementById("clearSearch").onclick=()=>{document.getElementById("search").value="";apply()};
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
