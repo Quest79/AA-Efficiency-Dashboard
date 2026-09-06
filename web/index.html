@@ -16,7 +16,8 @@ body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",mo
 button,input,select{font:inherit}
 .app{padding:20px;min-width:1200px}
 .top{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:14px}
-h1{font-size:20px;margin:0 0 5px}.sub{font-size:12px;color:var(--muted)}
+h1{font-size:20px;margin:0 0 5px;display:flex;align-items:center;gap:10px}.sub{font-size:12px;color:var(--muted)}
+.versionbadge{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.04em;color:#c9d9ee;background:#182333;border:1px solid #3d5978;border-radius:999px;padding:4px 7px;vertical-align:middle}
 .actions{display:flex;gap:8px;align-items:center}
 button{background:#2b2b2b;color:#eee;border:1px solid var(--line2);border-radius:8px;padding:8px 11px;cursor:pointer}
 button:hover{background:#343434}button.primary{background:#30517b;border-color:#587eae}
@@ -66,7 +67,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD</h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.1 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -225,6 +226,14 @@ function setupColumns(){
  });applyWidths()
 }
 function applyWidths(){columns.forEach(([k,l,def])=>{document.documentElement.style.setProperty(`--w-${k.replace("_","")}`,`${widths[k]??def}px`);let v=document.getElementById(`wv-${k}`);if(v)v.textContent=`${widths[k]??def}px`})}
+async function loadVersion(){
+ try{
+  const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
+  document.getElementById("appVersion").textContent=`GUI v1.0.1 · SERVER v${info.version||"?"}`;
+ }catch(e){
+  document.getElementById("appVersion").textContent="GUI v1.0.1 · SERVER ?";
+ }
+}
 async function loadData(){
  const d=await fetch("/api/data",{cache:"no-store"}).then(r=>r.json());DATA=d.merged||[];META=d.meta||{};
  document.getElementById("meta").textContent=DATA.length?`Last refresh: ${META.refreshed_at||"unknown"} · ${META.model_rows??DATA.length} INT rows · ${META.coding_rows??0} coding rows · ${META.coding_matched_to_int_rows??0} matched`:"No cached data yet. Click Refresh AA Data.";
@@ -246,7 +255,7 @@ document.getElementById("search").oninput=apply;document.getElementById("clearSe
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
 document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(columns.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns()};
 document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,coding:82,coding_cost:98,coding_eff:98};save(WKEY,widths);setupColumns()};
-renderPending();renderFilters();renderHide();setupColumns();loadData();pollStatus();setInterval(pollStatus,1000);
+renderPending();renderFilters();renderHide();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
 </html>
