@@ -11,24 +11,42 @@
   --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
   --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;
 }
-*{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text)}
+*{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text);height:100%;overflow:hidden}
 body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
 button,input,select{font:inherit}
-.app{padding:20px;min-width:1200px}
-.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:14px}
+.app{padding:12px;min-width:1200px;height:100vh;display:grid;grid-template-columns:360px minmax(0,1fr);gap:12px;overflow:hidden}
+.sidebar{height:calc(100vh - 24px);min-width:0;display:flex;flex-direction:column;background:#181818;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.sidebarhead{flex:0 0 auto;padding:10px 12px;border-bottom:1px solid var(--line);font-size:11px;font-weight:800;letter-spacing:.08em;color:#c9d9ee}
+.sidebarScroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:9px;display:flex;flex-direction:column;gap:9px}
+.sidebar .card{border-radius:9px;padding:9px;flex:0 0 auto}
+.workspace{height:calc(100vh - 24px);min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.top{flex:0 0 auto;display:flex;justify-content:space-between;gap:12px;align-items:center;margin:0 0 8px;padding:0 2px;min-height:38px}
 h1{font-size:20px;margin:0 0 5px;display:flex;align-items:center;gap:10px}.sub{font-size:12px;color:var(--muted)}
 .versionbadge{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.04em;color:#c9d9ee;background:#182333;border:1px solid #3d5978;border-radius:999px;padding:4px 7px;vertical-align:middle}
 .actions{display:flex;gap:8px;align-items:center}
+.sidebar .actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;align-items:end}
+.sidebar .actions label{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sidebar .actions label input{width:80px!important}
+.sidebar .actions button{width:100%;padding:7px 8px}
 button{background:#2b2b2b;color:#eee;border:1px solid var(--line2);border-radius:8px;padding:8px 11px;cursor:pointer}
 button:hover{background:#343434}button.primary{background:#30517b;border-color:#587eae}
 button:disabled{opacity:.55;cursor:not-allowed}
 input,select{background:#151515;color:#eee;border:1px solid #4b4b4b;border-radius:7px;padding:8px 9px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
-.controls{display:grid;grid-template-columns:1fr 1.5fr;gap:12px;margin-bottom:12px}
-.searchline{display:flex;gap:8px}.searchline input{flex:1}
+.controls{display:none}
+.searchline{display:flex;gap:8px}.searchline input{flex:1;min-width:0}
+.sidebar .searchline{display:grid;grid-template-columns:minmax(0,1fr) auto}
+.sidebar input,.sidebar select{padding:7px 8px}
+.sidebar .label{margin-bottom:4px}
+.sidebar .statusline{margin-top:5px}
+.sidebar .sub{font-size:10px}
 .label{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
 .statusline{margin-top:8px;font-size:11px;color:#aaa}.ok{color:var(--good)}.err{color:var(--bad)}
 .builder{display:grid;grid-template-columns:1fr 1fr 1.4fr auto;gap:7px;align-items:end}
+.sidebar .builder{grid-template-columns:1fr 1fr}
+.sidebar .builder>div{min-width:0}
+.sidebar .builder input,.sidebar .builder select{width:100%}
+.sidebar .builder button{width:100%}
 .rulelist,.savedlist,.hidelist{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
 .chip{display:inline-flex;gap:6px;align-items:center;background:#151515;border:1px solid #454545;border-radius:999px;padding:5px 7px;font-size:11px;max-width:100%}
 .chip button{border:0;background:transparent;padding:0 3px;color:#aaa}
@@ -39,16 +57,21 @@ input,select{background:#151515;color:#eee;border:1px solid #4b4b4b;border-radiu
 .chipname:hover{background:#232323}
 .chipedit{padding:4px 6px!important;font-size:11px;min-width:78px;max-width:220px;border-radius:6px}
 .savebar{display:grid;grid-template-columns:1.2fr 100px 105px auto;gap:7px;margin-top:9px;align-items:end}
+.sidebar .savebar{grid-template-columns:1fr 92px}
+.sidebar .savebar input:not([type=color]),.sidebar .savebar select{width:100%}
+.sidebar .savebar button{width:100%}
 input[type=color]{height:34px;padding:3px}
-.layout{display:grid;grid-template-columns:1.25fr 1fr;gap:12px;margin-bottom:12px}
+.layout{display:none}
 .checkgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.sidebar .checkgrid{grid-template-columns:1fr 1fr}
 .check{background:#151515;border:1px solid #444;border-radius:7px;padding:6px 8px;font-size:11px}
 .widthgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.sidebar .widthgrid{grid-template-columns:1fr 1fr}
 .widthbox{background:#151515;border:1px solid #444;border-radius:7px;padding:7px}
 .widthbox .mini{display:flex;justify-content:space-between;font-size:10px;color:#aaa}
 .widthbox input{width:100%;padding:0;border:0}
-.tableShell{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.tableScroll{overflow:auto;max-height:calc(100vh - 420px);min-height:420px}
+.tableShell{flex:1;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.tableScroll{flex:1;min-height:0;overflow:auto;max-height:none}
 .table{width:max-content;min-width:100%}
 .header,.row{
  display:grid;align-items:center;
@@ -70,17 +93,17 @@ input[type=color]{height:34px;padding:3px}
 .intdot{width:15px;height:15px;min-width:15px;border-radius:3px;border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 0 3px rgba(0,0,0,.35)}
 .hiddenRow,.hiddenCol{display:none!important}
 .nomatch{color:#777}.codingmatch{color:#e7e7e7}
-.footer{display:flex;gap:15px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line);font-size:10px;color:#aaa}
+.footer{flex:0 0 auto;display:flex;gap:15px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid var(--line);font-size:9px;color:#aaa}
 .logbox{display:none;margin-top:10px;max-height:210px;overflow:auto;background:#101010;border:1px solid #444;border-radius:7px;padding:8px;font-size:10px;white-space:pre-wrap}
 .logbox.open{display:block}
-@media(max-width:1350px){.controls,.layout{grid-template-columns:1fr}.tableScroll{max-height:none}}
+@media(max-width:1400px){.app{grid-template-columns:330px minmax(0,1fr)}.sidebar .widthgrid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.7 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.8 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -166,6 +189,51 @@ input[type=color]{height:34px;padding:3px}
 </div>
 
 <script>
+function installSidebarLayout(){
+  const app=document.querySelector(".app");
+  if(!app || app.querySelector(".sidebar"))return;
+
+  const top=app.querySelector(".top");
+  const controls=app.querySelector(".controls");
+  const layout=app.querySelector(".layout");
+  const table=app.querySelector(".tableShell");
+  if(!top || !controls || !layout || !table)return;
+
+  const sidebar=document.createElement("aside");
+  sidebar.className="sidebar";
+
+  const sidebarHead=document.createElement("div");
+  sidebarHead.className="sidebarhead";
+  sidebarHead.textContent="CONTROLS";
+
+  const scroll=document.createElement("div");
+  scroll.className="sidebarScroll";
+
+  const dataCard=document.createElement("section");
+  dataCard.className="card";
+  const dataLabel=document.createElement("div");
+  dataLabel.className="label";
+  dataLabel.textContent="Data / Refresh";
+  dataCard.appendChild(dataLabel);
+
+  const actions=top.querySelector(".actions");
+  if(actions)dataCard.appendChild(actions);
+
+  scroll.appendChild(dataCard);
+  controls.querySelectorAll(":scope > .card").forEach(card=>scroll.appendChild(card));
+  layout.querySelectorAll(":scope > .card").forEach(card=>scroll.appendChild(card));
+
+  sidebar.append(sidebarHead,scroll);
+
+  const workspace=document.createElement("main");
+  workspace.className="workspace";
+  workspace.append(top,table);
+
+  controls.remove();
+  layout.remove();
+  app.append(sidebar,workspace);
+}
+
 let DATA=[];
 let META={};
 const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1";
@@ -391,9 +459,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.7 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.0.8 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.7 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.0.8 · SERVER ?";
  }
 }
 async function loadData(){
@@ -418,7 +486,7 @@ document.getElementById("search").oninput=apply;document.getElementById("clearSe
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
 document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(columns.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns()};
 document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98};save(WKEY,widths);setupColumns()};
-renderPending();renderFilters();renderHide();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
+installSidebarLayout();renderPending();renderFilters();renderHide();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
 </html>
