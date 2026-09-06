@@ -9,7 +9,7 @@
   --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
   --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
   --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
-  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--row-scale:1;
+  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--w-codingagent:190px;--row-scale:1;
 }
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text);height:100%;overflow:hidden}
 body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
@@ -70,14 +70,14 @@ input[type=color]{height:34px;padding:3px}
 .widthbox{background:#151515;border:1px solid #444;border-radius:7px;padding:7px}
 .widthbox .mini{display:flex;justify-content:space-between;font-size:10px;color:#aaa}
 .widthbox input{width:100%;padding:0;border:0}
+.tabbar{flex:0 0 auto;display:flex;gap:6px;margin:0 0 8px;padding:0 2px}
+.tabbtn{border-radius:8px;padding:7px 13px;background:#1d1d1d;border:1px solid #454545;color:#aaa;font-size:11px;font-weight:800;letter-spacing:.04em}
+.tabbtn.active{background:#2c4665;border-color:#6084ad;color:#fff}
+.tabcount{opacity:.75;font-weight:600}
 .tableShell{flex:1;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
 .tableScroll{flex:1;min-height:0;overflow:auto;max-height:none}
 .table{width:max-content;min-width:100%}
-.header,.row{
- display:grid;align-items:center;
- grid-template-columns:var(--w-rank) var(--w-creator) var(--w-model) var(--w-int)
- var(--w-intcost) var(--w-inteff) var(--w-intlevel) var(--w-coding) var(--w-codingcost) var(--w-codingeff)
-}
+.header,.row{display:grid;align-items:center}
 .header{position:sticky;top:0;z-index:10;background:#252525;border-bottom:2px solid #8a8a8a;font-size:calc(11px * var(--row-scale));font-weight:700}
 .header>div,.row>div{padding:calc(8px * var(--row-scale)) calc(9px * var(--row-scale));white-space:nowrap}
 .row{border-bottom:1px solid rgba(255,255,255,.055);min-height:calc(35px * var(--row-scale));font-size:calc(16px * var(--row-scale));background:var(--row-bg,transparent)}
@@ -103,11 +103,11 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.9 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.1.0 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
-      <label class="sub">Min INT <input id="threshold" type="number" min="0" max="100" value="40" style="width:68px"></label>
+      <label class="sub">Min INT (view) <input id="threshold" type="number" min="0" max="100" value="0" style="width:68px"></label>
       <button id="refresh" class="primary">↻ Refresh AA Data</button>
       <button id="logsBtn">Diagnostics</button>
     </div>
@@ -180,10 +180,9 @@ input[type=color]{height:34px;padding:3px}
       </div>
     </div>
     <div class="footer">
-      <span>INT/$ = Intelligence Index ÷ AA Intelligence cost/task</span>
-      <span>INT LEVEL = creator-colored blocks, 1 per INT point starting at 40</span>
-      <span>CODE/$ = Coding Agent Index ÷ AA coding cost/task</span>
-      <span>N/A means AA did not provide/match that value</span>
+      <span>INTELLIGENCE tab = https://artificialanalysis.ai/leaderboards/models</span>
+      <span>CODING tab = AA Coding Agent Index, stored independently</span>
+      <span>INT/$ and CODE/$ are each score ÷ that tab's Cost per Task</span>
     </div>
   </section>
 </div>
@@ -239,7 +238,15 @@ function installSidebarLayout(){
 
   const workspace=document.createElement("main");
   workspace.className="workspace";
-  workspace.append(top,table);
+
+  const tabbar=document.createElement("div");
+  tabbar.className="tabbar";
+  tabbar.innerHTML=`
+    <button class="tabbtn" data-tab="int">INTELLIGENCE <span class="tabcount" id="intTabCount"></span></button>
+    <button class="tabbtn" data-tab="coding">CODING <span class="tabcount" id="codingTabCount"></span></button>
+  `;
+
+  workspace.append(top,tabbar,table);
 
   controls.remove();
   layout.remove();
@@ -247,18 +254,30 @@ function installSidebarLayout(){
 }
 
 let DATA=[];
+let INT_DATA=[];
+let CODING_DATA=[];
 let META={};
-const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1";
+const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", TAB_KEY="aa-live-active-tab-v1";
 const fields={
  model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
  int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},
- coding:{label:"Coding",type:"number"},coding_cost:{label:"Coding $/Task",type:"number"},coding_eff:{label:"Coding/$",type:"number"}
+ coding:{label:"Coding",type:"number"},coding_cost:{label:"Coding $/Task",type:"number"},coding_eff:{label:"Coding/$",type:"number"},
+ coding_agent:{label:"Harness",type:"text"}
 };
-const columns=[
+const INT_COLUMNS=[
  ["rank","Rank",52,36,100],["creator","Creator",120,70,260],["model","Model",470,220,900],
  ["int","INT",72,50,140],["int_cost","INT $/Task",105,75,190],["int_eff","INT/$",105,75,190],
- ["int_level","INT Level",480,160,760],["coding","Coding",100,70,180],["coding_cost","Code $/Task",115,80,200],["coding_eff","Code/$",115,80,200]
+ ["int_level","INT Level",480,160,760]
 ];
+const CODING_COLUMNS=[
+ ["rank","Rank",52,36,100],["creator","Creator",120,70,260],["model","Model",470,220,900],
+ ["coding","Coding",100,70,180],["coding_cost","Code $/Task",115,80,200],["coding_eff","Code/$",115,80,200],
+ ["coding_agent","Harness",190,100,360]
+];
+const ALL_COLUMNS=[...new Map([...INT_COLUMNS,...CODING_COLUMNS].map(c=>[c[0],c])).values()];
+let activeTab=load(TAB_KEY,"int");
+function activeColumns(){return activeTab==="coding"?CODING_COLUMNS:INT_COLUMNS}
+function normalizeModelKey(v){return String(v??"").toLowerCase().replace(/^\s*claude\s+/,"").replace(/[^a-z0-9]+/g,"")}
 const textOps=[["contains","contains"],["equals","equals"],["starts","starts with"],["ends","ends with"],["notcontains","does not contain"]];
 const numOps=[["eq","="],["gte","≥"],["lte","≤"],["gt",">"],["lt","<"],["neq","≠"]];
 
@@ -346,7 +365,44 @@ let pending=[];
 
 const fmt=(v,d=1)=>v==null?"N/A":Number(v).toFixed(d);
 const fmtCost=v=>v==null?"N/A":"$"+Number(v).toFixed(2);
-const rowText=x=>[x.rank,x.creator,x.model,x.int,x.int_cost,x.int_eff,"int level",x.coding,x.coding_cost,x.coding_eff].join(" ").toLowerCase();
+const rowText=x=>[x.rank,x.creator,x.model,x.int,x.int_cost,x.int_eff,"int level",x.coding,x.coding_cost,x.coding_eff,x.coding_agent].join(" ").toLowerCase();
+function currentData(){
+  if(activeTab==="coding")return CODING_DATA;
+  const minInt=Number(document.getElementById("threshold")?.value)||0;
+  return INT_DATA.filter(x=>Number(x.int)>=minInt);
+}
+function visibleColumns(){return activeColumns().filter(([k])=>colVis[k]!==false)}
+function gridTemplate(){return visibleColumns().map(([k])=>`var(--w-${k.replaceAll("_","")})`).join(" ")}
+function updateMeta(){
+  const meta=document.getElementById("meta");
+  if(!meta)return;
+  if(activeTab==="coding"){
+    meta.textContent=CODING_DATA.length
+      ? `Last refresh: ${META.refreshed_at||"unknown"} · ${CODING_DATA.length} Coding models · independent AA Coding Agent scores`
+      : "No Coding data cached yet. Click Refresh AA Data.";
+  }else{
+    const priced=META.model_rows_with_cost??INT_DATA.filter(x=>x.int_cost!=null).length;
+    meta.textContent=INT_DATA.length
+      ? `Last refresh: ${META.refreshed_at||"unknown"} · ${INT_DATA.length} scored AA models · ${priced} with Cost per Task · showing ${currentData().length}`
+      : "No Intelligence data cached yet. Click Refresh AA Data.";
+  }
+}
+function updateTabs(){
+  document.querySelectorAll(".tabbtn").forEach(b=>b.classList.toggle("active",b.dataset.tab===activeTab));
+  const ic=document.getElementById("intTabCount"),cc=document.getElementById("codingTabCount");
+  if(ic)ic.textContent=`(${INT_DATA.length})`;
+  if(cc)cc.textContent=`(${CODING_DATA.length})`;
+  const threshold=document.getElementById("threshold");
+  if(threshold)threshold.disabled=activeTab==="coding";
+}
+function setActiveTab(tab){
+  activeTab=tab==="coding"?"coding":"int";
+  save(TAB_KEY,activeTab);
+  updateTabs();
+  setupColumns();
+  renderTable();
+  updateMeta();
+}
 
 function rgba(hex,a=.25){let h=hex.replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");let n=parseInt(h,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}
 function gradient(colors){if(!colors.length)return"transparent";if(colors.length===1)return rgba(colors[0],.27);let s=[];colors.forEach((c,i)=>{let a=i/colors.length*100,b=(i+1)/colors.length*100;s.push(`${rgba(c,.25)} ${a}%`,`${rgba(c,.25)} ${b}%`)});return`linear-gradient(90deg,${s.join(",")})`}
@@ -360,42 +416,62 @@ function ruleMatch(x,r){
 function filterMatch(x,f){let t=f.rules.map(r=>ruleMatch(x,r));return f.mode==="any"?t.some(Boolean):t.every(Boolean)}
 function hideMatch(x,r){let a=r.field==="any"?rowText(x):String(x[r.field]??"").toLowerCase(),b=r.value.toLowerCase();return r.operator==="contains"?a.includes(b):r.operator==="equals"?a===b:r.operator==="starts"?a.startsWith(b):a.endsWith(b)}
 
-function renderTable(){
- document.querySelectorAll("#table .row").forEach(e=>e.remove());
- const table=document.getElementById("table");
- DATA.forEach((x,i)=>{
-  const row=document.createElement("div");row.className="row";row.dataset.i=i;
+function renderHeader(){
+ const header=document.querySelector("#table .header");
+ if(!header)return;
+ header.innerHTML="";
+ header.style.gridTemplateColumns=gridTemplate();
+ for(const [k,label] of visibleColumns()){
+   const cell=document.createElement("div");
+   cell.dataset.col=k;
+   if(["rank","int","int_cost","int_eff","coding","coding_cost","coding_eff"].includes(k))cell.className="r";
+   cell.textContent=label.toUpperCase();
+   header.appendChild(cell);
+ }
+}
+function makeCell(x,key){
   const creator=x.creator||"N/A";
   const creatorColor=creatorColorFor(creator);
 
-  const rank=document.createElement("div");rank.className="r";rank.dataset.col="rank";rank.textContent=x.rank??"—";
-
-  const creatorCell=document.createElement("div");creatorCell.className="creatorcell";creatorCell.dataset.col="creator";
-  const creatorSwatch=document.createElement("input");creatorSwatch.type="color";creatorSwatch.className="creatorswatch";creatorSwatch.value=creatorColor;creatorSwatch.title="Click to change this creator color";
-  creatorSwatch.addEventListener("input",()=>updateCreatorColor(creator,creatorSwatch.value));
-  const creatorName=document.createElement("span");creatorName.className="creatorname";creatorName.textContent=creator;creatorName.style.color=creatorColor;
-  creatorCell.append(creatorSwatch,creatorName);
-
-  const model=document.createElement("div");model.className="model";model.dataset.col="model";model.title=x.model||"";model.textContent=x.model||"";
-  const int=document.createElement("div");int.className="r";int.dataset.col="int";int.textContent=fmt(x.int,0);
-  const intCost=document.createElement("div");intCost.className="r";intCost.dataset.col="int_cost";intCost.textContent=fmtCost(x.int_cost);
-  const intEff=document.createElement("div");intEff.className="r";intEff.dataset.col="int_eff";intEff.textContent=fmt(x.int_eff,1);
-
-  const intLevel=document.createElement("div");intLevel.className="intlevel";intLevel.dataset.col="int_level";intLevel.title=`INT ${fmt(x.int,0)} · one block per point starting at 40`;
-  const intBlocks=Math.max(0,Math.round(Number(x.int)||0)-39);
-  for(let j=0;j<intBlocks;j++){
-    const dot=document.createElement("span");
-    dot.className="intdot";
-    dot.style.background=creatorColor;
-    intLevel.appendChild(dot);
+  if(key==="creator"){
+    const cell=document.createElement("div");cell.className="creatorcell";cell.dataset.col="creator";
+    const sw=document.createElement("input");sw.type="color";sw.className="creatorswatch";sw.value=creatorColor;sw.title="Click to change this creator color";
+    sw.addEventListener("input",()=>updateCreatorColor(creator,sw.value));
+    const name=document.createElement("span");name.className="creatorname";name.textContent=creator;name.style.color=creatorColor;
+    cell.append(sw,name);return cell;
   }
 
-  const coding=document.createElement("div");coding.className="r "+(x.coding==null?"nomatch":"codingmatch");coding.dataset.col="coding";coding.textContent=fmt(x.coding,1);
-  const codingCost=document.createElement("div");codingCost.className="r "+(x.coding_cost==null?"nomatch":"");codingCost.dataset.col="coding_cost";codingCost.textContent=fmtCost(x.coding_cost);
-  const codingEff=document.createElement("div");codingEff.className="r "+(x.coding_eff==null?"nomatch":"");codingEff.dataset.col="coding_eff";codingEff.textContent=fmt(x.coding_eff,1);
+  if(key==="int_level"){
+    const cell=document.createElement("div");cell.className="intlevel";cell.dataset.col="int_level";
+    cell.title=`INT ${fmt(x.int,0)} · one block per point starting at 40`;
+    const count=Math.max(0,Math.round(Number(x.int)||0)-39);
+    for(let j=0;j<count;j++){const dot=document.createElement("span");dot.className="intdot";dot.style.background=creatorColor;cell.appendChild(dot)}
+    return cell;
+  }
 
-  row.append(rank,creatorCell,model,int,intCost,intEff,intLevel,coding,codingCost,codingEff);
-  table.appendChild(row);
+  const cell=document.createElement("div");
+  cell.dataset.col=key;
+  if(["rank","int","int_cost","int_eff","coding","coding_cost","coding_eff"].includes(key))cell.className="r";
+  if(key==="model"){cell.classList.add("model");cell.title=x.model||""}
+  if(key==="coding_agent" && !x.coding_agent)cell.classList.add("nomatch");
+
+  const values={
+    rank:x.rank??"—", model:x.model||"", int:fmt(x.int,0), int_cost:fmtCost(x.int_cost), int_eff:fmt(x.int_eff,1),
+    coding:fmt(x.coding,1), coding_cost:fmtCost(x.coding_cost), coding_eff:fmt(x.coding_eff,1), coding_agent:x.coding_agent||"N/A"
+  };
+  cell.textContent=values[key]??"";
+  return cell;
+}
+function renderTable(){
+ document.querySelectorAll("#table .row").forEach(e=>e.remove());
+ DATA=currentData();
+ renderHeader();
+ const table=document.getElementById("table");
+ const template=gridTemplate();
+ DATA.forEach((x,i)=>{
+   const row=document.createElement("div");row.className="row";row.dataset.i=i;row.style.gridTemplateColumns=template;
+   for(const [key] of visibleColumns())row.appendChild(makeCell(x,key));
+   table.appendChild(row);
  });
  apply();
 }
@@ -456,12 +532,17 @@ function renderFilters(){
 function renderHide(){let w=document.getElementById("hideList");w.innerHTML="";hideRules.forEach((r,i)=>{let e=document.createElement("span");e.className="chip";e.textContent=`${r.field} ${r.operator} ${r.value}`;let b=document.createElement("button");b.textContent="×";b.onclick=()=>{hideRules.splice(i,1);save(HKEY,hideRules);renderHide();apply()};e.appendChild(b);w.appendChild(e)})}
 function setupColumns(){
  let c=document.getElementById("columnChecks"),wg=document.getElementById("widthGrid");c.innerHTML="";wg.innerHTML="";
- columns.forEach(([k,l,def,min,max])=>{
-  let lab=document.createElement("label");lab.className="check";let cb=document.createElement("input");cb.type="checkbox";cb.checked=colVis[k]!==false;cb.onchange=()=>{colVis[k]=cb.checked;save(CKEY,colVis);apply()};lab.append(cb,document.createTextNode(" "+l));c.appendChild(lab);
-  let b=document.createElement("div");b.className="widthbox";b.innerHTML=`<div class="mini"><span>${l}</span><span id="wv-${k}">${widths[k]??def}px</span></div><input type="range" min="${min}" max="${max}" step="2" value="${widths[k]??def}">`;b.querySelector("input").oninput=e=>{widths[k]=Number(e.target.value);save(WKEY,widths);applyWidths()};wg.appendChild(b)
- });applyWidths()
+ activeColumns().forEach(([k,l,def,min,max])=>{
+  let lab=document.createElement("label");lab.className="check";let cb=document.createElement("input");cb.type="checkbox";cb.checked=colVis[k]!==false;
+  cb.onchange=()=>{colVis[k]=cb.checked;save(CKEY,colVis);renderTable()};
+  lab.append(cb,document.createTextNode(" "+l));c.appendChild(lab);
+  let b=document.createElement("div");b.className="widthbox";b.innerHTML=`<div class="mini"><span>${l}</span><span id="wv-${k}">${widths[k]??def}px</span></div><input type="range" min="${min}" max="${max}" step="2" value="${widths[k]??def}">`;
+  b.querySelector("input").oninput=e=>{widths[k]=Number(e.target.value);save(WKEY,widths);applyWidths();renderTable()};
+  wg.appendChild(b)
+ });
+ applyWidths()
 }
-function applyWidths(){columns.forEach(([k,l,def])=>{document.documentElement.style.setProperty(`--w-${k.replace("_","")}`,`${widths[k]??def}px`);let v=document.getElementById(`wv-${k}`);if(v)v.textContent=`${widths[k]??def}px`})}
+function applyWidths(){ALL_COLUMNS.forEach(([k,l,def])=>{document.documentElement.style.setProperty(`--w-${k.replaceAll("_","")}`,`${widths[k]??def}px`);let v=document.getElementById(`wv-${k}`);if(v)v.textContent=`${widths[k]??def}px`})}
 function applyRowScale(){
   rowScale=Math.max(0.50,Math.min(2.00,Number(rowScale)||1));
   document.documentElement.style.setProperty("--row-scale",String(rowScale));
@@ -490,15 +571,36 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.9 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.1.0 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.9 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.1.0 · SERVER ?";
  }
 }
 async function loadData(){
- const d=await fetch("/api/data",{cache:"no-store"}).then(r=>r.json());DATA=d.merged||[];META=d.meta||{};
- document.getElementById("meta").textContent=DATA.length?`Last refresh: ${META.refreshed_at||"unknown"} · ${META.model_rows??DATA.length} INT rows · ${META.coding_rows??0} coding rows · ${META.coding_matched_to_int_rows??0} matched`:"No cached data yet. Click Refresh AA Data.";
- renderTable()
+ const d=await fetch("/api/data",{cache:"no-store"}).then(r=>r.json());
+ META=d.meta||{};
+
+ INT_DATA=(d.models||[]).filter(m=>m.score!=null).map(m=>({
+   model:m.model||"",creator:m.creator||"",int:Number(m.score),int_cost:m.cost==null?null:Number(m.cost),
+   int_eff:m.cost==null||Number(m.cost)===0?null:Number(m.score)/Number(m.cost)
+ }));
+ INT_DATA.sort((a,b)=>(b.int_eff??-Infinity)-(a.int_eff??-Infinity)||b.int-a.int||a.model.localeCompare(b.model));
+ INT_DATA.forEach((x,i)=>x.rank=x.int_eff==null?null:i+1);
+
+ const creatorByModel=new Map(INT_DATA.map(x=>[normalizeModelKey(x.model),x.creator]));
+ CODING_DATA=(d.coding||[]).filter(c=>c.score!=null).map(c=>({
+   model:c.model||"",creator:c.creator||creatorByModel.get(normalizeModelKey(c.model))||"",
+   coding:Number(c.score),coding_cost:c.cost==null?null:Number(c.cost),
+   coding_eff:c.cost==null||Number(c.cost)===0?null:Number(c.score)/Number(c.cost),
+   coding_agent:c.agent||c.coding_agent||""
+ }));
+ CODING_DATA.sort((a,b)=>(b.coding_eff??-Infinity)-(a.coding_eff??-Infinity)||b.coding-a.coding||a.model.localeCompare(b.model));
+ CODING_DATA.forEach((x,i)=>x.rank=x.coding_eff==null?null:i+1);
+
+ updateTabs();
+ setupColumns();
+ renderTable();
+ updateMeta()
 }
 async function pollStatus(){
  const s=await fetch("/api/status",{cache:"no-store"}).then(r=>r.json());let btn=document.getElementById("refresh");btn.disabled=s.refreshing;btn.textContent=s.refreshing?"Refreshing AA…":"↻ Refresh AA Data";
@@ -506,7 +608,7 @@ async function pollStatus(){
  if(!s.refreshing&&window.wasRefreshing){window.wasRefreshing=false;await loadData();if(s.last_error)alert("AA refresh failed. Last good data was kept. Open Diagnostics for details.\\n\\n"+s.last_error)}
  if(s.refreshing)window.wasRefreshing=true
 }
-async function refresh(){let t=Number(document.getElementById("threshold").value)||40;await fetch("/api/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({threshold:t})});window.wasRefreshing=true;pollStatus()}
+async function refresh(){await fetch("/api/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});window.wasRefreshing=true;pollStatus()}
 document.getElementById("field").innerHTML=Object.entries(fields).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("");
 document.getElementById("field").onchange=updateOps;updateOps();
 document.getElementById("ruleValue").addEventListener("input",syncBuilderCreatorColor);
@@ -514,10 +616,11 @@ document.getElementById("addRule").onclick=()=>{let v=document.getElementById("r
 document.getElementById("saveFilter").onclick=()=>{let n=document.getElementById("filterName").value.trim();if(!n||!pending.length)return;let color=document.getElementById("filterColor").value;let autoColor=false;const creatorRule=pending.find(r=>r.field==="creator");if(creatorRule){const preset=creatorColorFor(creatorRule.value);if(preset){color=preset;autoColor=true}}filters.push({id:Date.now()+"",name:n,active:true,color,autoColor,mode:document.getElementById("matchMode").value,rules:structuredClone(pending)});pending=[];document.getElementById("filterName").value="";save(FKEY,filters);renderPending();renderFilters();apply()};
 document.getElementById("addHide").onclick=()=>{let v=document.getElementById("hideValue").value.trim();if(!v)return;hideRules.push({field:document.getElementById("hideField").value,operator:document.getElementById("hideOperator").value,value:v.toLowerCase()});document.getElementById("hideValue").value="";save(HKEY,hideRules);renderHide();apply()};
 document.getElementById("search").oninput=apply;document.getElementById("clearSearch").onclick=()=>{document.getElementById("search").value="";apply()};
+document.getElementById("threshold").oninput=()=>{if(activeTab==="int"){renderTable();updateMeta()}};
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
-document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(columns.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns()};
-document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98};save(WKEY,widths);setupColumns()};
-installSidebarLayout();bindRowScale();renderPending();renderFilters();renderHide();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
+document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns();renderTable()};
+document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98,coding_agent:150};save(WKEY,widths);setupColumns();renderTable()};
+installSidebarLayout();document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>setActiveTab(b.dataset.tab));bindRowScale();renderPending();renderFilters();renderHide();updateTabs();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
 </html>
