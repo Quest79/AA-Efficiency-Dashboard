@@ -466,6 +466,23 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
 
         def try_launch_browser():
             nonlocal browser
+
+            # Codespaces/Linux: prefer the distro Chromium package. apt installs
+            # Chromium together with all of its shared-library dependencies, so
+            # this avoids broken Playwright browser-cache installs.
+            system_chromium = Path("/usr/bin/chromium")
+            if sys.platform.startswith("linux") and system_chromium.exists():
+                try:
+                    browser = p.chromium.launch(
+                        headless=headless,
+                        executable_path=str(system_chromium),
+                        args=["--no-sandbox", "--disable-dev-shm-usage"],
+                    )
+                    log("Launched system Chromium (/usr/bin/chromium)")
+                    return True
+                except Exception as e:
+                    launch_errors.append(str(e))
+
             for kwargs in (
                 {"channel": "msedge", "headless": headless},
                 {"channel": "chrome", "headless": headless},
@@ -483,21 +500,26 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
             # Codespaces/containers can have the Python Playwright package but not
             # its browser payload. Repair that automatically instead of making
             # the user drop into a terminal.
-            log("No usable Chromium launch; repairing Playwright browser + Linux dependencies automatically...")
+            log("No usable Chromium launch; repairing browser installation automatically...")
             try:
                 if sys.platform.startswith("linux"):
-                    dep_proc = subprocess.run(
-                        ["sudo", "-n", sys.executable, "-m", "playwright", "install-deps", "chromium"],
+                    # Install distro Chromium. This also installs its complete
+                    # shared-library dependency chain (ATK, NSS, GTK, etc.).
+                    apt_proc = subprocess.run(
+                        [
+                            "sudo", "-n", "bash", "-lc",
+                            "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y chromium"
+                        ],
                         capture_output=True,
                         text=True,
                         timeout=300,
                         check=False,
                     )
-                    if dep_proc.stdout.strip():
-                        log(dep_proc.stdout.strip()[-4000:])
-                    if dep_proc.stderr.strip():
-                        log(dep_proc.stderr.strip()[-4000:])
-                    log(f"Playwright Linux dependency installer exit code: {dep_proc.returncode}")
+                    if apt_proc.stdout.strip():
+                        log(apt_proc.stdout.strip()[-4000:])
+                    if apt_proc.stderr.strip():
+                        log(apt_proc.stderr.strip()[-4000:])
+                    log(f"System Chromium installer exit code: {apt_proc.returncode}")
 
                 proc = subprocess.run(
                     [sys.executable, "-m", "playwright", "install", "chromium"],
@@ -510,9 +532,9 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
                     log(proc.stdout.strip()[-4000:])
                 if proc.stderr.strip():
                     log(proc.stderr.strip()[-4000:])
-                log(f"Playwright Chromium installer exit code: {proc.returncode}")
+                log(f"Playwright Chromium fallback installer exit code: {proc.returncode}")
             except Exception as e:
-                log(f"Automatic Playwright repair failed: {e}")
+                log(f"Automatic browser repair failed: {e}")
 
             launch_errors.clear()
             try_launch_browser()
