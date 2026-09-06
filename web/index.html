@@ -9,7 +9,7 @@
   --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
   --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
   --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
-  --w-inteff:105px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;
+  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;
 }
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text)}
 body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
@@ -53,7 +53,7 @@ input[type=color]{height:34px;padding:3px}
 .header,.row{
  display:grid;align-items:center;
  grid-template-columns:var(--w-rank) var(--w-creator) var(--w-model) var(--w-int)
- var(--w-intcost) var(--w-inteff) var(--w-coding) var(--w-codingcost) var(--w-codingeff)
+ var(--w-intcost) var(--w-inteff) var(--w-intlevel) var(--w-coding) var(--w-codingcost) var(--w-codingeff)
 }
 .header{position:sticky;top:0;z-index:10;background:#252525;border-bottom:2px solid #8a8a8a;font-size:11px;font-weight:700}
 .header>div,.row>div{padding:8px 9px;white-space:nowrap}
@@ -66,6 +66,8 @@ input[type=color]{height:34px;padding:3px}
 .creatorswatch::-webkit-color-swatch-wrapper{padding:0}.creatorswatch::-webkit-color-swatch{border:0;border-radius:3px}
 .creatorswatch::-moz-color-swatch{border:0;border-radius:3px}
 .creatorname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.intlevel{display:flex;align-items:center;gap:6px;overflow:hidden;min-width:0}
+.intdot{width:15px;height:15px;min-width:15px;border-radius:3px;border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 0 3px rgba(0,0,0,.35)}
 .hiddenRow,.hiddenCol{display:none!important}
 .nomatch{color:#777}.codingmatch{color:#e7e7e7}
 .footer{display:flex;gap:15px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line);font-size:10px;color:#aaa}
@@ -78,7 +80,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.6 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.7 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -147,6 +149,7 @@ input[type=color]{height:34px;padding:3px}
           <div class="r" data-col="int">INT</div>
           <div class="r" data-col="int_cost">INT $/TASK</div>
           <div class="r" data-col="int_eff">INT/$</div>
+          <div data-col="int_level">INT LEVEL</div>
           <div class="r" data-col="coding">CODING</div>
           <div class="r" data-col="coding_cost">CODE $/TASK</div>
           <div class="r" data-col="coding_eff">CODE/$</div>
@@ -155,6 +158,7 @@ input[type=color]{height:34px;padding:3px}
     </div>
     <div class="footer">
       <span>INT/$ = Intelligence Index ÷ AA Intelligence cost/task</span>
+      <span>INT LEVEL = creator-colored blocks, 1 per INT point starting at 40</span>
       <span>CODE/$ = Coding Agent Index ÷ AA coding cost/task</span>
       <span>N/A means AA did not provide/match that value</span>
     </div>
@@ -173,7 +177,7 @@ const fields={
 const columns=[
  ["rank","Rank",52,36,100],["creator","Creator",120,70,260],["model","Model",470,220,900],
  ["int","INT",72,50,140],["int_cost","INT $/Task",105,75,190],["int_eff","INT/$",105,75,190],
- ["coding","Coding",100,70,180],["coding_cost","Code $/Task",115,80,200],["coding_eff","Code/$",115,80,200]
+ ["int_level","INT Level",480,160,760],["coding","Coding",100,70,180],["coding_cost","Code $/Task",115,80,200],["coding_eff","Code/$",115,80,200]
 ];
 const textOps=[["contains","contains"],["equals","equals"],["starts","starts with"],["ends","ends with"],["notcontains","does not contain"]];
 const numOps=[["eq","="],["gte","≥"],["lte","≤"],["gt",">"],["lt","<"],["neq","≠"]];
@@ -262,7 +266,7 @@ let pending=[];
 
 const fmt=(v,d=1)=>v==null?"N/A":Number(v).toFixed(d);
 const fmtCost=v=>v==null?"N/A":"$"+Number(v).toFixed(2);
-const rowText=x=>[x.rank,x.creator,x.model,x.int,x.int_cost,x.int_eff,x.coding,x.coding_cost,x.coding_eff].join(" ").toLowerCase();
+const rowText=x=>[x.rank,x.creator,x.model,x.int,x.int_cost,x.int_eff,"int level",x.coding,x.coding_cost,x.coding_eff].join(" ").toLowerCase();
 
 function rgba(hex,a=.25){let h=hex.replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");let n=parseInt(h,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}
 function gradient(colors){if(!colors.length)return"transparent";if(colors.length===1)return rgba(colors[0],.27);let s=[];colors.forEach((c,i)=>{let a=i/colors.length*100,b=(i+1)/colors.length*100;s.push(`${rgba(c,.25)} ${a}%`,`${rgba(c,.25)} ${b}%`)});return`linear-gradient(90deg,${s.join(",")})`}
@@ -296,11 +300,21 @@ function renderTable(){
   const int=document.createElement("div");int.className="r";int.dataset.col="int";int.textContent=fmt(x.int,0);
   const intCost=document.createElement("div");intCost.className="r";intCost.dataset.col="int_cost";intCost.textContent=fmtCost(x.int_cost);
   const intEff=document.createElement("div");intEff.className="r";intEff.dataset.col="int_eff";intEff.textContent=fmt(x.int_eff,1);
+
+  const intLevel=document.createElement("div");intLevel.className="intlevel";intLevel.dataset.col="int_level";intLevel.title=`INT ${fmt(x.int,0)} · one block per point starting at 40`;
+  const intBlocks=Math.max(0,Math.round(Number(x.int)||0)-39);
+  for(let j=0;j<intBlocks;j++){
+    const dot=document.createElement("span");
+    dot.className="intdot";
+    dot.style.background=creatorColor;
+    intLevel.appendChild(dot);
+  }
+
   const coding=document.createElement("div");coding.className="r "+(x.coding==null?"nomatch":"codingmatch");coding.dataset.col="coding";coding.textContent=fmt(x.coding,1);
   const codingCost=document.createElement("div");codingCost.className="r "+(x.coding_cost==null?"nomatch":"");codingCost.dataset.col="coding_cost";codingCost.textContent=fmtCost(x.coding_cost);
   const codingEff=document.createElement("div");codingEff.className="r "+(x.coding_eff==null?"nomatch":"");codingEff.dataset.col="coding_eff";codingEff.textContent=fmt(x.coding_eff,1);
 
-  row.append(rank,creatorCell,model,int,intCost,intEff,coding,codingCost,codingEff);
+  row.append(rank,creatorCell,model,int,intCost,intEff,intLevel,coding,codingCost,codingEff);
   table.appendChild(row);
  });
  apply();
@@ -377,9 +391,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.6 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.0.7 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.6 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.0.7 · SERVER ?";
  }
 }
 async function loadData(){
@@ -403,7 +417,7 @@ document.getElementById("addHide").onclick=()=>{let v=document.getElementById("h
 document.getElementById("search").oninput=apply;document.getElementById("clearSearch").onclick=()=>{document.getElementById("search").value="";apply()};
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
 document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(columns.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns()};
-document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,coding:82,coding_cost:98,coding_eff:98};save(WKEY,widths);setupColumns()};
+document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98};save(WKEY,widths);setupColumns()};
 renderPending();renderFilters();renderHide();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
