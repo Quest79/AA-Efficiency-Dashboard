@@ -67,7 +67,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.2 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.3 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -229,9 +229,9 @@ function applyWidths(){columns.forEach(([k,l,def])=>{document.documentElement.st
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.2 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.0.3 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.2 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.0.3 · SERVER ?";
  }
 }
 async function loadData(){
