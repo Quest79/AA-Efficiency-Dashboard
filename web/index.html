@@ -275,7 +275,7 @@ const CODING_COLUMNS=[
  ["coding_agent","Harness",190,100,360]
 ];
 const ALL_COLUMNS=[...new Map([...INT_COLUMNS,...CODING_COLUMNS].map(c=>[c[0],c])).values()];
-let activeTab=load(TAB_KEY,"int");
+let activeTab="int";
 function activeColumns(){return activeTab==="coding"?CODING_COLUMNS:INT_COLUMNS}
 function normalizeModelKey(v){return String(v??"").toLowerCase().replace(/^\s*claude\s+/,"").replace(/[^a-z0-9]+/g,"")}
 const textOps=[["contains","contains"],["equals","equals"],["starts","starts with"],["ends","ends with"],["notcontains","does not contain"]];
@@ -337,6 +337,7 @@ function suggestedCreatorColor(value){
 }
 const load=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):structuredClone(d)}catch(e){return structuredClone(d)}};
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+activeTab=load(TAB_KEY,"int");
 let creatorColorOverrides=load(CREATOR_COLOR_KEY,{});
 function creatorStorageKey(name){return String(name??"").trim().toLowerCase()}
 function creatorColorFor(name){
