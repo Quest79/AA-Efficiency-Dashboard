@@ -9,7 +9,7 @@
   --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
   --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
   --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
-  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;
+  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--row-scale:1;
 }
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text);height:100%;overflow:hidden}
 body{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
@@ -78,19 +78,19 @@ input[type=color]{height:34px;padding:3px}
  grid-template-columns:var(--w-rank) var(--w-creator) var(--w-model) var(--w-int)
  var(--w-intcost) var(--w-inteff) var(--w-intlevel) var(--w-coding) var(--w-codingcost) var(--w-codingeff)
 }
-.header{position:sticky;top:0;z-index:10;background:#252525;border-bottom:2px solid #8a8a8a;font-size:11px;font-weight:700}
-.header>div,.row>div{padding:8px 9px;white-space:nowrap}
-.row{border-bottom:1px solid rgba(255,255,255,.055);min-height:35px;background:var(--row-bg,transparent)}
+.header{position:sticky;top:0;z-index:10;background:#252525;border-bottom:2px solid #8a8a8a;font-size:calc(11px * var(--row-scale));font-weight:700}
+.header>div,.row>div{padding:calc(8px * var(--row-scale)) calc(9px * var(--row-scale));white-space:nowrap}
+.row{border-bottom:1px solid rgba(255,255,255,.055);min-height:calc(35px * var(--row-scale));font-size:calc(16px * var(--row-scale));background:var(--row-bg,transparent)}
 .row:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
 .row.searchmatch{background:linear-gradient(rgba(255,213,79,.30),rgba(255,213,79,.30)),var(--row-bg,transparent);box-shadow:inset 0 0 0 2px rgba(255,213,79,.9)}
 .r{text-align:right;font-variant-numeric:tabular-nums}.model{overflow:hidden;text-overflow:ellipsis}
-.creatorcell{display:flex;align-items:center;gap:7px;font-weight:700;overflow:hidden;min-width:0}
-.creatorswatch{width:15px;height:15px;min-width:15px;padding:0;border:1px solid rgba(255,255,255,.35);border-radius:4px;background:transparent;cursor:pointer}
+.creatorcell{display:flex;align-items:center;gap:calc(7px * var(--row-scale));font-weight:700;overflow:hidden;min-width:0}
+.creatorswatch{width:calc(15px * var(--row-scale));height:calc(15px * var(--row-scale));min-width:calc(15px * var(--row-scale));padding:0;border:1px solid rgba(255,255,255,.35);border-radius:4px;background:transparent;cursor:pointer}
 .creatorswatch::-webkit-color-swatch-wrapper{padding:0}.creatorswatch::-webkit-color-swatch{border:0;border-radius:3px}
 .creatorswatch::-moz-color-swatch{border:0;border-radius:3px}
 .creatorname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.intlevel{display:flex;align-items:center;gap:6px;overflow:hidden;min-width:0}
-.intdot{width:15px;height:15px;min-width:15px;border-radius:3px;border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 0 3px rgba(0,0,0,.35)}
+.intlevel{display:flex;align-items:center;gap:calc(6px * var(--row-scale));overflow:hidden;min-width:0}
+.intdot{width:calc(15px * var(--row-scale));height:calc(15px * var(--row-scale));min-width:calc(15px * var(--row-scale));border-radius:3px;border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.15),0 0 3px rgba(0,0,0,.35)}
 .hiddenRow,.hiddenCol{display:none!important}
 .nomatch{color:#777}.codingmatch{color:#e7e7e7}
 .footer{flex:0 0 auto;display:flex;gap:15px;flex-wrap:wrap;padding:7px 10px;border-top:1px solid var(--line);font-size:9px;color:#aaa}
@@ -103,7 +103,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.8 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.9 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -220,6 +220,18 @@ function installSidebarLayout(){
   if(actions)dataCard.appendChild(actions);
 
   scroll.appendChild(dataCard);
+
+  const scaleCard=document.createElement("section");
+  scaleCard.className="card";
+  scaleCard.innerHTML=`
+    <div class="label">Row / Table Scale</div>
+    <div class="widthbox">
+      <div class="mini"><span>Rows + contents</span><span id="rowScaleValue">1.00×</span></div>
+      <input id="rowScale" type="range" min="0.50" max="2.00" step="0.05" value="1">
+    </div>
+  `;
+  scroll.appendChild(scaleCard);
+
   controls.querySelectorAll(":scope > .card").forEach(card=>scroll.appendChild(card));
   layout.querySelectorAll(":scope > .card").forEach(card=>scroll.appendChild(card));
 
@@ -236,7 +248,7 @@ function installSidebarLayout(){
 
 let DATA=[];
 let META={};
-const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1";
+const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1";
 const fields={
  model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
  int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},
@@ -450,6 +462,25 @@ function setupColumns(){
  });applyWidths()
 }
 function applyWidths(){columns.forEach(([k,l,def])=>{document.documentElement.style.setProperty(`--w-${k.replace("_","")}`,`${widths[k]??def}px`);let v=document.getElementById(`wv-${k}`);if(v)v.textContent=`${widths[k]??def}px`})}
+function applyRowScale(){
+  rowScale=Math.max(0.50,Math.min(2.00,Number(rowScale)||1));
+  document.documentElement.style.setProperty("--row-scale",String(rowScale));
+  const slider=document.getElementById("rowScale");
+  const value=document.getElementById("rowScaleValue");
+  if(slider)slider.value=String(rowScale);
+  if(value)value.textContent=`${rowScale.toFixed(2)}×`;
+}
+function bindRowScale(){
+  const slider=document.getElementById("rowScale");
+  if(!slider)return;
+  slider.value=String(rowScale);
+  slider.addEventListener("input",e=>{
+    rowScale=Number(e.target.value);
+    save(ROW_SCALE_KEY,rowScale);
+    applyRowScale();
+  });
+  applyRowScale();
+}
 function syncBuilderCreatorColor(){
   if(document.getElementById("field").value!=="creator")return;
   const value=document.getElementById("ruleValue").value;
@@ -459,9 +490,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.8 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.0.9 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.8 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.0.9 · SERVER ?";
  }
 }
 async function loadData(){
@@ -486,7 +517,7 @@ document.getElementById("search").oninput=apply;document.getElementById("clearSe
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
 document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(columns.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns()};
 document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98};save(WKEY,widths);setupColumns()};
-installSidebarLayout();renderPending();renderFilters();renderHide();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
+installSidebarLayout();bindRowScale();renderPending();renderFilters();renderHide();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
 </html>
