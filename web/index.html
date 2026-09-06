@@ -8,7 +8,7 @@
 :root{
   --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
   --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
-  --w-rank:52px;--w-company:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
+  --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
   --w-inteff:105px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;
 }
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text)}
@@ -52,7 +52,7 @@ input[type=color]{height:34px;padding:3px}
 .table{width:max-content;min-width:100%}
 .header,.row{
  display:grid;align-items:center;
- grid-template-columns:var(--w-rank) var(--w-company) var(--w-model) var(--w-int)
+ grid-template-columns:var(--w-rank) var(--w-creator) var(--w-model) var(--w-int)
  var(--w-intcost) var(--w-inteff) var(--w-coding) var(--w-codingcost) var(--w-codingeff)
 }
 .header{position:sticky;top:0;z-index:10;background:#252525;border-bottom:2px solid #8a8a8a;font-size:11px;font-weight:700}
@@ -61,7 +61,7 @@ input[type=color]{height:34px;padding:3px}
 .row:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
 .row.searchmatch{background:linear-gradient(rgba(255,213,79,.30),rgba(255,213,79,.30)),var(--row-bg,transparent);box-shadow:inset 0 0 0 2px rgba(255,213,79,.9)}
 .r{text-align:right;font-variant-numeric:tabular-nums}.model{overflow:hidden;text-overflow:ellipsis}
-.creatorcell{display:flex;align-items:center;gap:7px;font-weight:700;overflow:hidden}
+.creatorcell{display:flex;align-items:center;gap:7px;font-weight:700;overflow:hidden;min-width:0}
 .creatorswatch{width:15px;height:15px;min-width:15px;padding:0;border:1px solid rgba(255,255,255,.35);border-radius:4px;background:transparent;cursor:pointer}
 .creatorswatch::-webkit-color-swatch-wrapper{padding:0}.creatorswatch::-webkit-color-swatch{border:0;border-radius:3px}
 .creatorswatch::-moz-color-swatch{border:0;border-radius:3px}
@@ -78,7 +78,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.5 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.6 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -377,9 +377,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.5 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.0.6 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.5 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.0.6 · SERVER ?";
  }
 }
 async function loadData(){
