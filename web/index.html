@@ -61,6 +61,11 @@ input[type=color]{height:34px;padding:3px}
 .row:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
 .row.searchmatch{background:linear-gradient(rgba(255,213,79,.30),rgba(255,213,79,.30)),var(--row-bg,transparent);box-shadow:inset 0 0 0 2px rgba(255,213,79,.9)}
 .r{text-align:right;font-variant-numeric:tabular-nums}.model{overflow:hidden;text-overflow:ellipsis}
+.creatorcell{display:flex;align-items:center;gap:7px;font-weight:700;overflow:hidden}
+.creatorswatch{width:15px;height:15px;min-width:15px;padding:0;border:1px solid rgba(255,255,255,.35);border-radius:4px;background:transparent;cursor:pointer}
+.creatorswatch::-webkit-color-swatch-wrapper{padding:0}.creatorswatch::-webkit-color-swatch{border:0;border-radius:3px}
+.creatorswatch::-moz-color-swatch{border:0;border-radius:3px}
+.creatorname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hiddenRow,.hiddenCol{display:none!important}
 .nomatch{color:#777}.codingmatch{color:#e7e7e7}
 .footer{display:flex;gap:15px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line);font-size:10px;color:#aaa}
@@ -73,7 +78,7 @@ input[type=color]{height:34px;padding:3px}
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.4 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.0.5 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -159,7 +164,7 @@ input[type=color]{height:34px;padding:3px}
 <script>
 let DATA=[];
 let META={};
-const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1";
+const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1";
 const fields={
  model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
  int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},
@@ -229,6 +234,26 @@ function suggestedCreatorColor(value){
 }
 const load=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):structuredClone(d)}catch(e){return structuredClone(d)}};
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+let creatorColorOverrides=load(CREATOR_COLOR_KEY,{});
+function creatorStorageKey(name){return String(name??"").trim().toLowerCase()}
+function creatorColorFor(name){
+  const stored=creatorColorOverrides[creatorStorageKey(name)];
+  return stored || suggestedCreatorColor(name) || "#b8b8b8";
+}
+function updateCreatorColor(name,color){
+  creatorColorOverrides[creatorStorageKey(name)]=color;
+  save(CREATOR_COLOR_KEY,creatorColorOverrides);
+
+  // Keep auto-colored Creator highlight filters synchronized with the creator palette.
+  filters.forEach(f=>{
+    if(f.autoColor===false)return;
+    const creatorRule=(f.rules||[]).find(r=>r.field==="creator" && ruleMatch({creator:name},r));
+    if(creatorRule)f.color=color;
+  });
+  save(FKEY,filters);
+  renderFilters();
+  renderTable();
+}
 let filters=load(FKEY,[{id:"astra",name:"Astra",active:true,color:"#0ea5e9",autoColor:false,mode:"all",rules:[{field:"model",operator:"contains",value:"Astra"}]},{id:"51",name:"5.1",active:true,color:"#7c3aed",autoColor:false,mode:"all",rules:[{field:"model",operator:"contains",value:"5.1"}]}]).map(f=>({autoColor:true,...f}));
 let hideRules=load(HKEY,[]);
 let colVis=load(CKEY,Object.fromEntries(columns.map(x=>[x[0],true])));
@@ -256,8 +281,27 @@ function renderTable(){
  const table=document.getElementById("table");
  DATA.forEach((x,i)=>{
   const row=document.createElement("div");row.className="row";row.dataset.i=i;
-  row.innerHTML=`<div class="r" data-col="rank">${x.rank??"—"}</div><div data-col="creator">${x.creator||"N/A"}</div><div class="model" data-col="model" title="${(x.model||"").replaceAll('"',"&quot;")}">${x.model}</div><div class="r" data-col="int">${fmt(x.int,0)}</div><div class="r" data-col="int_cost">${fmtCost(x.int_cost)}</div><div class="r" data-col="int_eff">${fmt(x.int_eff,1)}</div><div class="r ${x.coding==null?"nomatch":"codingmatch"}" data-col="coding">${fmt(x.coding,1)}</div><div class="r ${x.coding_cost==null?"nomatch":""}" data-col="coding_cost">${fmtCost(x.coding_cost)}</div><div class="r ${x.coding_eff==null?"nomatch":""}" data-col="coding_eff">${fmt(x.coding_eff,1)}</div>`;
-  table.appendChild(row)
+  const creator=x.creator||"N/A";
+  const creatorColor=creatorColorFor(creator);
+
+  const rank=document.createElement("div");rank.className="r";rank.dataset.col="rank";rank.textContent=x.rank??"—";
+
+  const creatorCell=document.createElement("div");creatorCell.className="creatorcell";creatorCell.dataset.col="creator";
+  const creatorSwatch=document.createElement("input");creatorSwatch.type="color";creatorSwatch.className="creatorswatch";creatorSwatch.value=creatorColor;creatorSwatch.title="Click to change this creator color";
+  creatorSwatch.addEventListener("input",()=>updateCreatorColor(creator,creatorSwatch.value));
+  const creatorName=document.createElement("span");creatorName.className="creatorname";creatorName.textContent=creator;creatorName.style.color=creatorColor;
+  creatorCell.append(creatorSwatch,creatorName);
+
+  const model=document.createElement("div");model.className="model";model.dataset.col="model";model.title=x.model||"";model.textContent=x.model||"";
+  const int=document.createElement("div");int.className="r";int.dataset.col="int";int.textContent=fmt(x.int,0);
+  const intCost=document.createElement("div");intCost.className="r";intCost.dataset.col="int_cost";intCost.textContent=fmtCost(x.int_cost);
+  const intEff=document.createElement("div");intEff.className="r";intEff.dataset.col="int_eff";intEff.textContent=fmt(x.int_eff,1);
+  const coding=document.createElement("div");coding.className="r "+(x.coding==null?"nomatch":"codingmatch");coding.dataset.col="coding";coding.textContent=fmt(x.coding,1);
+  const codingCost=document.createElement("div");codingCost.className="r "+(x.coding_cost==null?"nomatch":"");codingCost.dataset.col="coding_cost";codingCost.textContent=fmtCost(x.coding_cost);
+  const codingEff=document.createElement("div");codingEff.className="r "+(x.coding_eff==null?"nomatch":"");codingEff.dataset.col="coding_eff";codingEff.textContent=fmt(x.coding_eff,1);
+
+  row.append(rank,creatorCell,model,int,intCost,intEff,coding,codingCost,codingEff);
+  table.appendChild(row);
  });
  apply();
 }
@@ -326,15 +370,16 @@ function setupColumns(){
 function applyWidths(){columns.forEach(([k,l,def])=>{document.documentElement.style.setProperty(`--w-${k.replace("_","")}`,`${widths[k]??def}px`);let v=document.getElementById(`wv-${k}`);if(v)v.textContent=`${widths[k]??def}px`})}
 function syncBuilderCreatorColor(){
   if(document.getElementById("field").value!=="creator")return;
-  const preset=suggestedCreatorColor(document.getElementById("ruleValue").value);
+  const value=document.getElementById("ruleValue").value;
+  const preset=value.trim()?creatorColorFor(value):null;
   if(preset)document.getElementById("filterColor").value=preset;
 }
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.0.4 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.0.5 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.0.4 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.0.5 · SERVER ?";
  }
 }
 async function loadData(){
@@ -352,8 +397,8 @@ async function refresh(){let t=Number(document.getElementById("threshold").value
 document.getElementById("field").innerHTML=Object.entries(fields).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("");
 document.getElementById("field").onchange=updateOps;updateOps();
 document.getElementById("ruleValue").addEventListener("input",syncBuilderCreatorColor);
-document.getElementById("addRule").onclick=()=>{let v=document.getElementById("ruleValue").value.trim();if(!v)return;const field=document.getElementById("field").value;pending.push({field,operator:document.getElementById("operator").value,value:v});if(field==="creator"){const preset=suggestedCreatorColor(v);if(preset)document.getElementById("filterColor").value=preset}document.getElementById("ruleValue").value="";renderPending()};
-document.getElementById("saveFilter").onclick=()=>{let n=document.getElementById("filterName").value.trim();if(!n||!pending.length)return;let color=document.getElementById("filterColor").value;let autoColor=false;const creatorRule=pending.find(r=>r.field==="creator");if(creatorRule){const preset=suggestedCreatorColor(creatorRule.value);if(preset){color=preset;autoColor=true}}filters.push({id:Date.now()+"",name:n,active:true,color,autoColor,mode:document.getElementById("matchMode").value,rules:structuredClone(pending)});pending=[];document.getElementById("filterName").value="";save(FKEY,filters);renderPending();renderFilters();apply()};
+document.getElementById("addRule").onclick=()=>{let v=document.getElementById("ruleValue").value.trim();if(!v)return;const field=document.getElementById("field").value;pending.push({field,operator:document.getElementById("operator").value,value:v});if(field==="creator"){const preset=creatorColorFor(v);if(preset)document.getElementById("filterColor").value=preset}document.getElementById("ruleValue").value="";renderPending()};
+document.getElementById("saveFilter").onclick=()=>{let n=document.getElementById("filterName").value.trim();if(!n||!pending.length)return;let color=document.getElementById("filterColor").value;let autoColor=false;const creatorRule=pending.find(r=>r.field==="creator");if(creatorRule){const preset=creatorColorFor(creatorRule.value);if(preset){color=preset;autoColor=true}}filters.push({id:Date.now()+"",name:n,active:true,color,autoColor,mode:document.getElementById("matchMode").value,rules:structuredClone(pending)});pending=[];document.getElementById("filterName").value="";save(FKEY,filters);renderPending();renderFilters();apply()};
 document.getElementById("addHide").onclick=()=>{let v=document.getElementById("hideValue").value.trim();if(!v)return;hideRules.push({field:document.getElementById("hideField").value,operator:document.getElementById("hideOperator").value,value:v.toLowerCase()});document.getElementById("hideValue").value="";save(HKEY,hideRules);renderHide();apply()};
 document.getElementById("search").oninput=apply;document.getElementById("clearSearch").onclick=()=>{document.getElementById("search").value="";apply()};
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
