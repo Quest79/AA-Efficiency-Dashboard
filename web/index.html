@@ -360,8 +360,8 @@ function updateCreatorColor(name,color){
 }
 let filters=load(FKEY,[{id:"astra",name:"Astra",active:true,color:"#0ea5e9",autoColor:false,mode:"all",rules:[{field:"model",operator:"contains",value:"Astra"}]},{id:"51",name:"5.1",active:true,color:"#7c3aed",autoColor:false,mode:"all",rules:[{field:"model",operator:"contains",value:"5.1"}]}]).map(f=>({autoColor:true,...f}));
 let hideRules=load(HKEY,[]);
-let colVis=load(CKEY,Object.fromEntries(columns.map(x=>[x[0],true])));
-let widths=load(WKEY,Object.fromEntries(columns.map(x=>[x[0],x[2]])));
+let colVis=load(CKEY,Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],true])));
+let widths=load(WKEY,Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],x[2]])));
 let pending=[];
 
 const fmt=(v,d=1)=>v==null?"N/A":Number(v).toFixed(d);
