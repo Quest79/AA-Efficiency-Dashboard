@@ -7,9 +7,11 @@ import subprocess
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from urllib.parse import urljoin
 
 MODEL_URL = "https://artificialanalysis.ai/leaderboards/models"
 CODING_URL = "https://artificialanalysis.ai/agents/coding-agents"
@@ -46,6 +48,192 @@ CODING_COST_ALIASES = MODEL_COST_ALIASES | {
     "agentcostpertask", "agent_cost_per_task"
 }
 
+
+def fetch_html_http(url: str, log: Callable[[str], None], timeout: int = 60) -> str:
+    import requests
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+        "Cache-Control": "no-cache",
+    }
+    r = requests.get(url, headers=headers, timeout=timeout)
+    r.raise_for_status()
+    log(f"HTTP fetch {url}: {r.status_code}, {len(r.text):,} chars")
+    return r.text
+
+
+def parse_html_tables(html_text: str, mode: str, log: Callable[[str], None]) -> list[dict[str, Any]]:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html_text, "html.parser")
+    best: list[dict[str, Any]] = []
+
+    for table in soup.find_all("table"):
+        matrix = []
+        for tr in table.find_all("tr"):
+            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
+            if cells:
+                matrix.append(cells)
+
+        # AA's LLM leaderboard has a grouped header row followed by the
+        # actual column names. Try the first few rows as the real header.
+        for header_i in range(min(5, len(matrix))):
+            parsed = parse_table_rows(matrix[header_i], matrix[header_i + 1 :], mode)
+            if len(parsed) > len(best):
+                best = parsed
+
+    log(f"HTTP HTML table extraction ({mode}): {len(best)} rows")
+    return best
+
+
+def parse_coding_variant_tables(html_text: str) -> list[dict[str, Any]]:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html_text, "html.parser")
+    out: list[dict[str, Any]] = []
+
+    for table in soup.find_all("table"):
+        matrix = []
+        for tr in table.find_all("tr"):
+            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
+            if cells:
+                matrix.append(cells)
+
+        for header_i in range(min(5, len(matrix))):
+            headers = matrix[header_i]
+            norm = [_nk(h) for h in headers]
+
+            def col_exact_or_contains(*needles: str) -> int | None:
+                for i, h in enumerate(norm):
+                    if all(n in h for n in needles):
+                        return i
+                return None
+
+            agent_i = col_exact_or_contains("agent")
+            model_i = col_exact_or_contains("model")
+            score_i = None
+            for i, h in enumerate(norm):
+                if h == "index" or "codingagentindex" in h:
+                    score_i = i
+                    break
+            cost_i = col_exact_or_contains("cost", "task")
+
+            if model_i is None or score_i is None or cost_i is None:
+                continue
+
+            parsed_here = []
+            for cells in matrix[header_i + 1 :]:
+                need = max(model_i, score_i, cost_i, agent_i or 0)
+                if len(cells) <= need:
+                    continue
+                model = cells[model_i].strip()
+                score = _num(cells[score_i])
+                cost = _num(cells[cost_i])
+                if not model or score is None:
+                    continue
+                parsed_here.append({
+                    "model": model,
+                    "creator": "",
+                    "score": score,
+                    "cost": cost,
+                    "agent": cells[agent_i].strip() if agent_i is not None else "",
+                })
+
+            if len(parsed_here) > len(out):
+                out = parsed_here
+
+    return out
+
+
+def discover_coding_comparison_urls(main_html: str, log: Callable[[str], None]) -> list[str]:
+    from bs4 import BeautifulSoup
+
+    urls: set[str] = set()
+    soup = BeautifulSoup(main_html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = a.get("href", "")
+        if "/agents/coding-agents/comparisons/" in href:
+            urls.add(urljoin(CODING_URL, href))
+
+    # The main page does not always render every comparison link. AA's
+    # sitemap is a second source of truth for the same public pages.
+    if len(urls) < 8:
+        try:
+            sitemap = fetch_html_http("https://artificialanalysis.ai/sitemap.xml", log, timeout=45)
+            sm = BeautifulSoup(sitemap, "xml")
+            locs = [x.get_text(strip=True) for x in sm.find_all("loc")]
+            nested = [x for x in locs if x.endswith(".xml")]
+            for u in locs:
+                if "/agents/coding-agents/comparisons/" in u:
+                    urls.add(u)
+            for sm_url in nested[:12]:
+                try:
+                    child = fetch_html_http(sm_url, log, timeout=45)
+                    csm = BeautifulSoup(child, "xml")
+                    for loc in csm.find_all("loc"):
+                        u = loc.get_text(strip=True)
+                        if "/agents/coding-agents/comparisons/" in u:
+                            urls.add(u)
+                except Exception:
+                    pass
+        except Exception as e:
+            log(f"Could not inspect AA sitemap for coding comparisons: {e}")
+
+    result = sorted(urls)
+    log(f"Discovered {len(result)} AA coding comparison pages")
+    return result
+
+
+def crawl_coding_comparisons(main_html: str, log: Callable[[str], None]) -> list[dict[str, Any]]:
+    urls = discover_coding_comparison_urls(main_html, log)
+    if not urls:
+        return []
+
+    # Avoid hammering AA; comparison pages are public and contain the
+    # Model Variants tables that back the Coding Agent section.
+    urls = urls[:100]
+    all_rows: list[dict[str, Any]] = []
+
+    def get_one(url: str):
+        html = fetch_html_http(url, lambda _msg: None, timeout=45)
+        return parse_coding_variant_tables(html)
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        future_map = {ex.submit(get_one, u): u for u in urls}
+        for fut in as_completed(future_map):
+            try:
+                all_rows.extend(fut.result())
+            except Exception:
+                pass
+
+    # One dashboard row per model. If the same model was evaluated through
+    # multiple agent harnesses, keep its highest Coding Agent Index variant;
+    # use lower cost as the tie-breaker. Preserve the harness name in data.
+    best: dict[str, dict[str, Any]] = {}
+    for row in all_rows:
+        k = normalize_model_name(row["model"])
+        if not k:
+            continue
+        old = best.get(k)
+        if old is None:
+            best[k] = row
+            continue
+        new_key = (row["score"], -(row["cost"] if row["cost"] is not None else 1e9))
+        old_key = (old["score"], -(old["cost"] if old["cost"] is not None else 1e9))
+        if new_key > old_key:
+            best[k] = row
+
+    result = list(best.values())
+    result.sort(key=lambda x: (-x["score"], x["model"].lower()))
+    log(f"Coding comparison-table fallback: {len(result)} unique models from {len(all_rows)} variants")
+    return result
+
+
 def _nk(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(s).lower())
 
@@ -72,6 +260,9 @@ def _num(v: Any) -> float | None:
 
 def normalize_model_name(s: str) -> str:
     s = str(s or "").lower()
+    # AA's Coding pages often omit the "Claude" family prefix while the
+    # main LLM leaderboard includes it.
+    s = re.sub(r"^\s*claude\s+", "", s)
     s = s.replace("with fallback", "fallback")
     s = s.replace("non-reasoning", "nonreasoning")
     s = s.replace("non reasoning", "nonreasoning")
@@ -152,23 +343,18 @@ def extract_tables_from_dom(page, mode: str, log: Callable[[str], None]) -> list
       const result = [];
       const candidates = [...document.querySelectorAll('table')];
       for (const table of candidates) {
-        const trs = [...table.querySelectorAll('tr')];
-        if (!trs.length) continue;
-        const headers = [...trs[0].querySelectorAll('th,td')].map(x => x.innerText.trim());
-        const rows = trs.slice(1).map(tr => [...tr.querySelectorAll('th,td')].map(x => x.innerText.trim()));
-        result.push({headers, rows});
+        const rows = [...table.querySelectorAll('tr')]
+          .map(tr => [...tr.querySelectorAll('th,td')].map(x => x.innerText.trim()))
+          .filter(r => r.length);
+        if (rows.length) result.push({rows});
       }
 
-      // ARIA-grid fallback
       const grids = [...document.querySelectorAll('[role="table"],[role="grid"]')];
       for (const grid of grids) {
-        const rowEls = [...grid.querySelectorAll('[role="row"]')];
-        if (!rowEls.length) continue;
         const getCells = r => [...r.querySelectorAll('[role="columnheader"],[role="cell"],[role="gridcell"]')]
           .map(x => x.innerText.trim());
-        const headers = getCells(rowEls[0]);
-        const rows = rowEls.slice(1).map(getCells);
-        result.push({headers, rows});
+        const rows = [...grid.querySelectorAll('[role="row"]')].map(getCells).filter(r => r.length);
+        if (rows.length) result.push({rows});
       }
       return result;
     }
@@ -176,9 +362,13 @@ def extract_tables_from_dom(page, mode: str, log: Callable[[str], None]) -> list
     tables = page.evaluate(js)
     best: list[dict[str, Any]] = []
     for t in tables:
-        parsed = parse_table_rows(t.get("headers", []), t.get("rows", []), mode)
-        if len(parsed) > len(best):
-            best = parsed
+        matrix = t.get("rows", [])
+        # AA uses grouped header rows, so the real column names are not
+        # guaranteed to be row zero.
+        for header_i in range(min(5, len(matrix))):
+            parsed = parse_table_rows(matrix[header_i], matrix[header_i + 1 :], mode)
+            if len(parsed) > len(best):
+                best = parsed
     log(f"DOM table extraction ({mode}): {len(best)} rows")
     return best
 
@@ -569,7 +759,16 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
         collect_script_json(model_page, model_blobs, log)
         model_dom = extract_tables_from_dom(model_page, "models", log)
         model_json = extract_from_json(model_blobs, "models", log)
-        models = merge_sources(model_dom, model_json)
+
+        model_http: list[dict[str, Any]] = []
+        try:
+            model_html = fetch_html_http(MODEL_URL, log)
+            model_http = parse_html_tables(model_html, "models", log)
+            (debug_dir / "models-http.html").write_text(model_html, encoding="utf-8")
+        except Exception as e:
+            log(f"HTTP model leaderboard fallback failed: {e}")
+
+        models = merge_sources(model_http, merge_sources(model_dom, model_json))
         models = [x for x in models if x.get("score") is not None and x["score"] >= threshold]
         models.sort(key=lambda x: (-x["score"], x["model"].lower()))
         save_debug(model_page, debug_dir, "models", model_blobs, log)
@@ -594,6 +793,17 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
         coding_dom = extract_tables_from_dom(coding_page, "coding", log)
         coding_json = extract_from_json(coding_blobs, "coding", log)
         coding = merge_sources(coding_dom, coding_json)
+
+        # AA's main Coding page is chart-driven. If its internal JSON shape
+        # changes, recover from AA's own public Model Variants tables.
+        if len(coding) < 20:
+            try:
+                coding_main_html = fetch_html_http(CODING_URL, log)
+                coding_fallback = crawl_coding_comparisons(coding_main_html, log)
+                coding = merge_sources(coding_fallback, coding)
+            except Exception as e:
+                log(f"Coding comparison fallback failed: {e}")
+
         coding.sort(key=lambda x: (-x["score"], x["model"].lower()))
         save_debug(coding_page, debug_dir, "coding", coding_blobs, log)
         log(f"Coding-agent extraction: {len(coding)} unique rows")
@@ -622,6 +832,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
             "coding_cost": coding_cost,
             "coding_eff": coding_eff,
             "coding_match": bool(c),
+            "coding_agent": c.get("agent") if c else None,
         })
 
     # Sort by INT efficiency, with N/A at bottom.
