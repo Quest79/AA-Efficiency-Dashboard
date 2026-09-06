@@ -1,4 +1,4 @@
-# AA Efficiency Dashboard v1.0.1
+# AA Efficiency Dashboard v1.0.4
 
 Local Windows dashboard that refreshes live data from Artificial Analysis.
 
@@ -79,4 +79,4 @@ That folder contains the last AA page HTML and captured JSON payloads. This is i
 
 ## Version
 
-v1.0.1
+v1.0.4
