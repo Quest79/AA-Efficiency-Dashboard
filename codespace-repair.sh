@@ -17,21 +17,29 @@ echo "=== Installing Python dependencies ==="
 python -m pip install -r requirements.txt
 
 echo
-echo "=== Installing Playwright Linux system libraries ==="
-sudo -n python -m playwright install-deps chromium
+echo "=== Installing system Chromium + all required Linux libraries ==="
+sudo apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y chromium
 
 echo
-echo "=== Installing/repairing Playwright Chromium ==="
+echo "=== Installing Playwright Chromium fallback ==="
 python -m playwright install chromium
 
 echo
-echo "=== Verifying Chromium can actually launch ==="
+echo "=== Verifying SYSTEM Chromium can actually launch ==="
 python - <<'PY'
 from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True)
+    browser = p.chromium.launch(
+        headless=True,
+        executable_path="/usr/bin/chromium",
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+    )
+    page = browser.new_page()
+    page.set_content("<title>ok</title>")
+    assert page.title() == "ok"
     browser.close()
-print("Chromium launch test: OK")
+print("System Chromium launch test: OK")
 PY
 
 echo
@@ -76,7 +84,4 @@ echo "=============================================="
 echo
 echo "Open:"
 echo "$DASHBOARD_URL"
-echo
-echo "If anything still fails, run:"
-echo "cat /tmp/aa-dashboard.log"
 echo
