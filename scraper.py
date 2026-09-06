@@ -71,7 +71,7 @@ def parse_html_tables(html_text: str, mode: str, log: Callable[[str], None]) -> 
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html_text, "html.parser")
-    best: list[dict[str, Any]] = []
+    combined: list[dict[str, Any]] = []
 
     for table in soup.find_all("table"):
         matrix = []
@@ -80,15 +80,31 @@ def parse_html_tables(html_text: str, mode: str, log: Callable[[str], None]) -> 
             if cells:
                 matrix.append(cells)
 
-        # AA's LLM leaderboard has a grouped header row followed by the
-        # actual column names. Try the first few rows as the real header.
-        for header_i in range(min(5, len(matrix))):
+        table_best: list[dict[str, Any]] = []
+        # AA's leaderboard has a grouped header row followed by the actual
+        # column names. Try several possible header rows.
+        for header_i in range(min(8, len(matrix))):
             parsed = parse_table_rows(matrix[header_i], matrix[header_i + 1 :], mode)
-            if len(parsed) > len(best):
-                best = parsed
+            if len(parsed) > len(table_best):
+                table_best = parsed
+        combined.extend(table_best)
 
-    log(f"HTTP HTML table extraction ({mode}): {len(best)} rows")
-    return best
+    # Merge all matching table sections. This also handles AA splitting
+    # responsive/virtualized table content into more than one <table>.
+    dedup: dict[str, dict[str, Any]] = {}
+    for row in combined:
+        key = normalize_model_name(row.get("model", ""))
+        if not key:
+            continue
+        old = dedup.get(key)
+        quality = int(row.get("score") is not None) + int(row.get("cost") is not None) + int(bool(row.get("creator")))
+        old_quality = -1 if old is None else int(old.get("score") is not None) + int(old.get("cost") is not None) + int(bool(old.get("creator")))
+        if old is None or quality > old_quality:
+            dedup[key] = row
+
+    result = list(dedup.values())
+    log(f"HTTP HTML table extraction ({mode}): {len(result)} unique rows")
+    return result
 
 
 def parse_coding_variant_tables(html_text: str) -> list[dict[str, Any]]:
@@ -237,6 +253,17 @@ def crawl_coding_comparisons(main_html: str, log: Callable[[str], None]) -> list
 def _nk(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(s).lower())
 
+
+def clean_creator(value: Any) -> str:
+    text = re.sub(r"^\s*Image:\s*", "", str(value or "").strip(), flags=re.I)
+    # AA's accessible HTML can expose logo alt text + visible text as
+    # "AnthropicAnthropic". Collapse an exact repeated half.
+    if len(text) >= 4 and len(text) % 2 == 0:
+        half = len(text) // 2
+        if text[:half].strip().lower() == text[half:].strip().lower():
+            text = text[:half].strip()
+    return text
+
 def _num(v: Any) -> float | None:
     if v is None:
         return None
@@ -330,7 +357,7 @@ def parse_table_rows(headers: list[str], rows: list[list[str]], mode: str) -> li
             continue
         item = {
             "model": model,
-            "creator": cells[creator_i].strip() if creator_i is not None else "",
+            "creator": clean_creator(cells[creator_i]) if creator_i is not None else "",
             "score": score,
             "cost": _num(cells[cost_i]) if cost_i is not None else None,
         }
@@ -360,17 +387,32 @@ def extract_tables_from_dom(page, mode: str, log: Callable[[str], None]) -> list
     }
     """
     tables = page.evaluate(js)
-    best: list[dict[str, Any]] = []
+    combined: list[dict[str, Any]] = []
     for t in tables:
         matrix = t.get("rows", [])
+        table_best: list[dict[str, Any]] = []
         # AA uses grouped header rows, so the real column names are not
         # guaranteed to be row zero.
-        for header_i in range(min(5, len(matrix))):
+        for header_i in range(min(8, len(matrix))):
             parsed = parse_table_rows(matrix[header_i], matrix[header_i + 1 :], mode)
-            if len(parsed) > len(best):
-                best = parsed
-    log(f"DOM table extraction ({mode}): {len(best)} rows")
-    return best
+            if len(parsed) > len(table_best):
+                table_best = parsed
+        combined.extend(table_best)
+
+    dedup: dict[str, dict[str, Any]] = {}
+    for row in combined:
+        key = normalize_model_name(row.get("model", ""))
+        if not key:
+            continue
+        old = dedup.get(key)
+        quality = int(row.get("score") is not None) + int(row.get("cost") is not None) + int(bool(row.get("creator")))
+        old_quality = -1 if old is None else int(old.get("score") is not None) + int(old.get("cost") is not None) + int(bool(old.get("creator")))
+        if old is None or quality > old_quality:
+            dedup[key] = row
+
+    result = list(dedup.values())
+    log(f"DOM table extraction ({mode}): {len(result)} unique rows")
+    return result
 
 def extract_from_json(blobs: list[tuple[str, Any]], mode: str, log: Callable[[str], None]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
@@ -394,7 +436,7 @@ def extract_from_json(blobs: list[tuple[str, Any]], mode: str, log: Callable[[st
                 continue
             candidates.append({
                 "model": model_s,
-                "creator": str(creator or "").strip(),
+                "creator": clean_creator(creator),
                 "score": sv,
                 "cost": _num(cost),
                 "_source": url,
@@ -617,6 +659,61 @@ def force_lazy_sections(page, log: Callable[[str], None]) -> None:
         pass
     log("Triggered coding page lazy-loaded sections")
 
+def force_model_leaderboard_full_render(page, log: Callable[[str], None]) -> None:
+    """Trigger AA's full leaderboard DOM/network data before extraction."""
+    try:
+        # Click only explicit expansion actions; never generic navigation.
+        for _ in range(4):
+            clicked = 0
+            for pattern in (
+                re.compile(r"^show\s+more(?:\s+models)?$", re.I),
+                re.compile(r"^load\s+more(?:\s+models)?$", re.I),
+                re.compile(r"^show\s+all(?:\s+models)?$", re.I),
+                re.compile(r"^view\s+more\s+models$", re.I),
+            ):
+                try:
+                    locs = page.get_by_text(pattern)
+                    for i in range(min(locs.count(), 8)):
+                        loc = locs.nth(i)
+                        if loc.is_visible():
+                            loc.click(timeout=1200)
+                            clicked += 1
+                            page.wait_for_timeout(250)
+                except Exception:
+                    pass
+            if not clicked:
+                break
+
+        # Walk the document to trigger lazy rows and data requests.
+        height = int(page.evaluate("document.body.scrollHeight"))
+        for y in range(0, max(height, 1), 700):
+            page.evaluate("(y) => window.scrollTo(0, y)", y)
+            page.wait_for_timeout(55)
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_timeout(500)
+
+        # Some responsive tables use their own scrolling container.
+        page.evaluate(
+            """
+            () => {
+              const els = [...document.querySelectorAll('*')];
+              for (const el of els) {
+                const cs = getComputedStyle(el);
+                const scrollable = el.scrollHeight > el.clientHeight + 100 &&
+                  (cs.overflowY === 'auto' || cs.overflowY === 'scroll');
+                if (scrollable) el.scrollTop = el.scrollHeight;
+              }
+            }
+            """
+        )
+        page.wait_for_timeout(700)
+        page.evaluate("window.scrollTo(0, 0)")
+        rows = page.locator("table tr").count()
+        log(f"Triggered full model leaderboard render; DOM table rows now: {rows}")
+    except Exception as e:
+        log(f"Model leaderboard full-render pass failed: {e}")
+
+
 @dataclass
 class ScrapeResult:
     models: list[dict[str, Any]]
@@ -756,6 +853,11 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
             model_page.wait_for_load_state("networkidle", timeout=12_000)
         except Exception:
             pass
+        force_model_leaderboard_full_render(model_page, log)
+        try:
+            model_page.wait_for_load_state("networkidle", timeout=8_000)
+        except Exception:
+            pass
         collect_script_json(model_page, model_blobs, log)
         model_dom = extract_tables_from_dom(model_page, "models", log)
         model_json = extract_from_json(model_blobs, "models", log)
@@ -769,10 +871,13 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
             log(f"HTTP model leaderboard fallback failed: {e}")
 
         models = merge_sources(model_http, merge_sources(model_dom, model_json))
-        models = [x for x in models if x.get("score") is not None and x["score"] >= threshold]
+        # Store the full AA leaderboard. Min INT is a GUI-only view filter;
+        # refreshing must never throw away models from the cache.
+        models = [x for x in models if x.get("score") is not None]
         models.sort(key=lambda x: (-x["score"], x["model"].lower()))
         save_debug(model_page, debug_dir, "models", model_blobs, log)
-        log(f"Model leaderboard after INT >= {threshold:g}: {len(models)} rows")
+        priced_models = sum(1 for x in models if x.get("cost") is not None)
+        log(f"Model leaderboard: {len(models)} scored rows, {priced_models} with Cost per Task")
 
         # ---- Coding agent page ----
         coding_page = context.new_page()
@@ -805,6 +910,17 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
                 log(f"Coding comparison fallback failed: {e}")
 
         coding.sort(key=lambda x: (-x["score"], x["model"].lower()))
+
+        # Coding remains its own dataset. We only borrow creator metadata
+        # from the model leaderboard when AA's coding fallback table omits it.
+        model_meta_by_norm = {normalize_model_name(x["model"]): x for x in models}
+        for c in coding:
+            c["creator"] = clean_creator(c.get("creator"))
+            if not c.get("creator"):
+                exact = model_meta_by_norm.get(normalize_model_name(c.get("model", "")))
+                if exact:
+                    c["creator"] = clean_creator(exact.get("creator"))
+
         save_debug(coding_page, debug_dir, "coding", coding_blobs, log)
         log(f"Coding-agent extraction: {len(coding)} unique rows")
 
@@ -850,8 +966,9 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 40) -> 
     meta = {
         "model_url": MODEL_URL,
         "coding_url": CODING_URL,
-        "threshold": threshold,
+        "threshold": None,
         "model_rows": len(models),
+        "model_rows_with_cost": sum(1 for x in models if x.get("cost") is not None),
         "coding_rows": len(coding),
         "coding_matched_to_int_rows": matched,
         "coding_selector_selected": selected,
