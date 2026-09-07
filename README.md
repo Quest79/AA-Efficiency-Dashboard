@@ -1,35 +1,31 @@
-# AA Efficiency Dashboard v1.1.2
+# AA Efficiency Dashboard v1.1.3
 
 Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 
-## Sources
+## Exact refresh sources
 
-- Intelligence / pricing: https://artificialanalysis.ai/leaderboards/models
-- Coding Agent Index / coding cost: https://artificialanalysis.ai/agents/coding-agents
+- Intelligence tab refreshes only:
+  https://artificialanalysis.ai/leaderboards/models
+- Coding tab refreshes only:
+  https://artificialanalysis.ai/agents/coding-agents
 
-## Main behavior
+A tab refresh does not open or scrape the other tab's source.
 
-- Intelligence and Coding are separate tabs and separate datasets.
-- Coding is scraped from AA server-rendered Coding Model Variants tables rather than depending on the chart UI.
-- Coding rows preserve the evaluated agent harness + model variant.
-- Refresh stores the full AA model leaderboard; Min INT is only a view filter.
-- INT/$ = Intelligence Index / Intelligence Cost per Task.
-- CODE/$ = Coding Agent Index / Coding Cost per Task.
-- Last-good data is cached instead of being overwritten by an obviously incomplete scrape.
+## Refresh behavior
+
+- Intelligence and Coding have separate caches.
+- Refresh updates only the currently selected tab.
+- A failed Intelligence refresh cannot block a Coding refresh.
+- A failed Coding refresh cannot replace valid Intelligence data.
+- Coding accepts any non-zero set of valid rows from the Coding page instead of discarding useful results because the count is below an arbitrary threshold.
+- Coding extraction combines the exact page's rendered DOM, captured JSON/network responses, a looser schema-aware JSON extractor, and the exact page's own HTML.
+- The Coding model selector is expanded toward all models before chart/network extraction.
+- Diagnostics preserve detailed scraper logs even when validation fails.
 
 ## UI
 
-- Live search and saved row highlights.
-- Persistent hide rules.
-- Creator color presets with editable colors.
-- Adjustable persistent column widths.
-- Adjustable row/content scale and row height.
-- Creator-colored INT Level blocks.
-- Installed-font dropdown using the browser Local Font Access API when supported.
-- Full Google Fonts dropdown loaded from Google Fonts metadata; selected Google fonts are loaded on demand.
-- Font selection persists in localStorage.
-- Full-height left control sidebar.
+All existing creator colors, saved highlights, filters, column controls, row/content scaling, row height, and font controls are preserved.
 
 ## Version
 
-v1.1.2
+v1.1.3
