@@ -1005,9 +1005,15 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
         models: list[dict[str, Any]] = []
         coding: list[dict[str, Any]] = []
         selected = total = None
+        coding_cost_matches = 0
+        coding_cost_available = 0
 
-        if target in {"int", "both"}:
-            # ---- Models leaderboard ----
+        # The Coding table also needs Cost per Task. AA exposes that on the
+        # model leaderboard, so a Coding refresh reads this page as a cost
+        # source too. app.py still preserves the Intelligence tab cache when
+        # target == "coding"; these rows are only used to enrich Coding rows.
+        if target in {"int", "coding", "both"}:
+            # ---- Models leaderboard / Coding cost source ----
             model_page = context.new_page()
             model_blobs: list[tuple[str, Any]] = []
             attach_response_collector(model_page, model_blobs, log)
@@ -1067,7 +1073,8 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
             coding_json = extract_from_json(coding_blobs, "coding", log)
             coding_loose = extract_coding_from_json_loose(coding_blobs, log)
 
-            # Exact Coding URL only. No INT page, comparison pages, or sitemap.
+            # Coding scores/harnesses come from the exact Coding URL.
+            # Cost per Task is joined separately from MODEL_URL below.
             coding_http: list[dict[str, Any]] = []
             try:
                 coding_html = fetch_html_http(CODING_URL, log)
@@ -1085,8 +1092,31 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
                 )
             )
 
+            # Join the model-leaderboard Cost per Task onto each Coding row.
+            # Keep the Coding-page score and harness untouched.
+            model_by_norm = {
+                normalize_model_name(m.get("model", "")): m
+                for m in models
+                if normalize_model_name(m.get("model", ""))
+            }
+            coding_cost_matches = 0
+            coding_cost_available = 0
             for c in coding:
                 c["creator"] = clean_creator(c.get("creator"))
+                match = match_coding(c.get("model", ""), model_by_norm)
+                if match:
+                    coding_cost_matches += 1
+                    if match.get("cost") is not None:
+                        c["cost"] = match["cost"]
+                        coding_cost_available += 1
+                    if not c.get("creator") and match.get("creator"):
+                        c["creator"] = clean_creator(match.get("creator"))
+
+            log(
+                f"Coding cost join from model leaderboard: "
+                f"{coding_cost_matches}/{len(coding)} model matches, "
+                f"{coding_cost_available} with Cost per Task"
+            )
 
             save_debug(coding_page, debug_dir, "coding", coding_blobs, log)
             log(
@@ -1133,6 +1163,8 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
         "model_rows_with_cost": sum(1 for x in models if x.get("cost") is not None),
         "coding_rows": len(coding),
         "coding_matched_to_int_rows": matched,
+        "coding_cost_source_matches": coding_cost_matches,
+        "coding_rows_with_cost": coding_cost_available,
         "coding_selector_selected": selected,
         "coding_selector_total": total,
         "refresh_target": target,
