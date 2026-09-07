@@ -166,87 +166,176 @@ def parse_coding_variant_tables(html_text: str) -> list[dict[str, Any]]:
     return out
 
 
+def _comparison_links_from_html(html_text: str) -> set[str]:
+    from bs4 import BeautifulSoup
+
+    urls: set[str] = set()
+    soup = BeautifulSoup(html_text, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = str(a.get("href") or "")
+        if "/agents/coding-agents/comparisons/" not in href:
+            continue
+        url = urljoin(CODING_URL, href).split("#", 1)[0].split("?", 1)[0]
+        # Ignore the bare comparison-picker page; we need pair pages that
+        # contain the server-rendered Model Variants table.
+        if url.rstrip("/") != (CODING_URL + "/comparisons").rstrip("/"):
+            urls.add(url)
+    return urls
+
+
 def discover_coding_comparison_urls(main_html: str, log: Callable[[str], None]) -> list[str]:
     from bs4 import BeautifulSoup
 
     urls: set[str] = set()
-    soup = BeautifulSoup(main_html, "html.parser")
-    for a in soup.find_all("a", href=True):
-        href = a.get("href", "")
-        if "/agents/coding-agents/comparisons/" in href:
-            urls.add(urljoin(CODING_URL, href))
+    urls.update(_comparison_links_from_html(main_html))
 
-    # The main page does not always render every comparison link. AA's
-    # sitemap is a second source of truth for the same public pages.
-    if len(urls) < 8:
-        try:
-            sitemap = fetch_html_http("https://artificialanalysis.ai/sitemap.xml", log, timeout=45)
-            sm = BeautifulSoup(sitemap, "xml")
-            locs = [x.get_text(strip=True) for x in sm.find_all("loc")]
-            nested = [x for x in locs if x.endswith(".xml")]
-            for u in locs:
-                if "/agents/coding-agents/comparisons/" in u:
-                    urls.add(u)
-            for sm_url in nested[:12]:
-                try:
-                    child = fetch_html_http(sm_url, log, timeout=45)
-                    csm = BeautifulSoup(child, "xml")
-                    for loc in csm.find_all("loc"):
-                        u = loc.get_text(strip=True)
-                        if "/agents/coding-agents/comparisons/" in u:
-                            urls.add(u)
-                except Exception:
-                    pass
-        except Exception as e:
-            log(f"Could not inspect AA sitemap for coding comparisons: {e}")
+    # Important: the Coding benchmark page itself usually links only to the
+    # comparison picker. The picker is where AA exposes the popular pair
+    # pages that contain the actual server-rendered Model Variants tables.
+    try:
+        comparison_index = fetch_html_http(CODING_URL + "/comparisons", log, timeout=45)
+        urls.update(_comparison_links_from_html(comparison_index))
+    except Exception as e:
+        log(f"Could not read AA coding comparison index: {e}")
 
-    result = sorted(urls)
-    log(f"Discovered {len(result)} AA coding comparison pages")
+    # AA also publishes pair pages through its sitemap. Inspect all nested
+    # sitemaps instead of only the first few because their ordering changes.
+    try:
+        sitemap = fetch_html_http("https://artificialanalysis.ai/sitemap.xml", log, timeout=45)
+        sm = BeautifulSoup(sitemap, "xml")
+        locs = [x.get_text(strip=True) for x in sm.find_all("loc")]
+        nested = [x for x in locs if x.endswith(".xml")]
+        for u in locs:
+            if "/agents/coding-agents/comparisons/" in u:
+                urls.add(u.split("#", 1)[0].split("?", 1)[0])
+        for sm_url in nested[:60]:
+            try:
+                child = fetch_html_http(sm_url, lambda _msg: None, timeout=45)
+                csm = BeautifulSoup(child, "xml")
+                for loc in csm.find_all("loc"):
+                    u = loc.get_text(strip=True)
+                    if "/agents/coding-agents/comparisons/" in u:
+                        urls.add(u.split("#", 1)[0].split("?", 1)[0])
+            except Exception:
+                pass
+    except Exception as e:
+        log(f"Could not inspect AA sitemap for coding comparisons: {e}")
+
+    result = sorted(
+        u for u in urls
+        if u.rstrip("/") != (CODING_URL + "/comparisons").rstrip("/")
+    )
+    log(f"Discovered {len(result)} AA coding comparison pair pages")
     return result
 
 
 def crawl_coding_comparisons(main_html: str, log: Callable[[str], None]) -> list[dict[str, Any]]:
-    urls = discover_coding_comparison_urls(main_html, log)
-    if not urls:
+    seed_urls = discover_coding_comparison_urls(main_html, log)
+    if not seed_urls:
+        log("No coding comparison pair pages were discovered")
         return []
 
-    # Avoid hammering AA; comparison pages are public and contain the
-    # Model Variants tables that back the Coding Agent section.
-    urls = urls[:100]
+    target_total = None
+    m = COUNT_RE.search(main_html)
+    if m:
+        target_total = int(m.group(2))
+        log(f"AA Coding page reports {target_total} selectable models")
+
+    queue = list(seed_urls)
+    queued = set(queue)
+    visited: set[str] = set()
     all_rows: list[dict[str, Any]] = []
 
-    def get_one(url: str):
-        html = fetch_html_http(url, lambda _msg: None, timeout=45)
-        return parse_coding_variant_tables(html)
+    # Crawl comparison pair pages in small batches. Every pair page contains
+    # a plain HTML "Model Variants" table, so this does not depend on AA's
+    # chart JavaScript or selector UI.
+    while queue and len(visited) < 100:
+        batch: list[str] = []
+        while queue and len(batch) < 6:
+            u = queue.pop(0)
+            if u not in visited:
+                batch.append(u)
 
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        future_map = {ex.submit(get_one, u): u for u in urls}
-        for fut in as_completed(future_map):
-            try:
-                all_rows.extend(fut.result())
-            except Exception:
-                pass
+        if not batch:
+            break
 
-    # One dashboard row per model. If the same model was evaluated through
-    # multiple agent harnesses, keep its highest Coding Agent Index variant;
-    # use lower cost as the tie-breaker. Preserve the harness name in data.
-    best: dict[str, dict[str, Any]] = {}
+        def get_one(url: str):
+            html = fetch_html_http(url, lambda _msg: None, timeout=45)
+            rows = parse_coding_variant_tables(html)
+            links = _comparison_links_from_html(html)
+            return url, rows, links
+
+        with ThreadPoolExecutor(max_workers=min(6, len(batch))) as ex:
+            future_map = {ex.submit(get_one, u): u for u in batch}
+            for fut in as_completed(future_map):
+                url = future_map[fut]
+                visited.add(url)
+                try:
+                    _, rows, links = fut.result()
+                    all_rows.extend(rows)
+                    for link in links:
+                        if link not in visited and link not in queued and len(queued) < 140:
+                            queued.add(link)
+                            queue.append(link)
+                except Exception as e:
+                    log(f"Coding comparison fetch failed for {url}: {e}")
+
+        # Count unique evaluated agent+model variants as we go. Do not collapse
+        # the same underlying model when AA evaluated it through another harness.
+        unique_now = {
+            (
+                _nk(str(r.get("agent") or "")),
+                normalize_model_name(r.get("model", "")),
+            )
+            for r in all_rows
+            if normalize_model_name(r.get("model", ""))
+        }
+        log(
+            f"Coding comparison crawl: {len(visited)} pages, "
+            f"{len(unique_now)} unique agent/model variants"
+        )
+
+        # Once we have at least the total AA says is selectable, one extra
+        # discovery batch is unnecessary. This keeps refreshes reasonably fast.
+        if target_total and len(unique_now) >= target_total:
+            break
+
+    best: dict[tuple[str, str], dict[str, Any]] = {}
     for row in all_rows:
-        k = normalize_model_name(row["model"])
-        if not k:
+        model_key = normalize_model_name(row.get("model", ""))
+        agent_key = _nk(str(row.get("agent") or ""))
+        if not model_key:
             continue
-        old = best.get(k)
+        key = (agent_key, model_key)
+        old = best.get(key)
         if old is None:
-            best[k] = row
+            best[key] = row
             continue
-        new_key = (row["score"], -(row["cost"] if row["cost"] is not None else 1e9))
-        old_key = (old["score"], -(old["cost"] if old["cost"] is not None else 1e9))
-        if new_key > old_key:
-            best[k] = row
+        # Duplicate pair pages repeat the same harness/model row. Prefer a row
+        # with a real cost, then the higher current Index.
+        new_quality = (
+            row.get("cost") is not None,
+            row.get("score") if row.get("score") is not None else -1,
+        )
+        old_quality = (
+            old.get("cost") is not None,
+            old.get("score") if old.get("score") is not None else -1,
+        )
+        if new_quality > old_quality:
+            best[key] = row
 
     result = list(best.values())
-    result.sort(key=lambda x: (-x["score"], x["model"].lower()))
-    log(f"Coding comparison-table fallback: {len(result)} unique models from {len(all_rows)} variants")
+    result.sort(
+        key=lambda x: (
+            -(x.get("score") or -1),
+            str(x.get("agent") or "").lower(),
+            str(x.get("model") or "").lower(),
+        )
+    )
+    log(
+        f"Coding comparison tables: {len(result)} unique agent/model variants "
+        f"from {len(all_rows)} repeated table rows"
+    )
     return result
 
 
@@ -899,17 +988,25 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0) -> S
         coding_json = extract_from_json(coding_blobs, "coding", log)
         coding = merge_sources(coding_dom, coding_json)
 
-        # AA's main Coding page is chart-driven. If its internal JSON shape
-        # changes, recover from AA's own public Model Variants tables.
-        if len(coding) < 20:
-            try:
-                coding_main_html = fetch_html_http(CODING_URL, log)
-                coding_fallback = crawl_coding_comparisons(coding_main_html, log)
-                coding = merge_sources(coding_fallback, coding)
-            except Exception as e:
-                log(f"Coding comparison fallback failed: {e}")
+        # The main Coding page is chart-driven and can expose zero tabular
+        # rows. AA's comparison pages expose the same benchmark data as normal
+        # server-rendered Model Variants tables, so prefer those whenever found.
+        try:
+            coding_main_html = fetch_html_http(CODING_URL, log)
+            coding_tables = crawl_coding_comparisons(coding_main_html, log)
+            if coding_tables:
+                coding = coding_tables
+                log("Using AA server-rendered Coding Model Variants tables")
+        except Exception as e:
+            log(f"Coding comparison-table scrape failed: {e}")
 
-        coding.sort(key=lambda x: (-x["score"], x["model"].lower()))
+        coding.sort(
+            key=lambda x: (
+                -x["score"],
+                str(x.get("agent") or "").lower(),
+                x["model"].lower(),
+            )
+        )
 
         # Coding remains its own dataset. We only borrow creator metadata
         # from the model leaderboard when AA's coding fallback table omits it.
