@@ -1,4 +1,4 @@
-# AA Efficiency Dashboard v1.1.4
+# AA Efficiency Dashboard v1.1.5
 
 Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 
@@ -16,6 +16,7 @@ A tab refresh does not open or scrape the other tab's source.
 - Codespaces binds to `0.0.0.0:8765` so the forwarded URL can reach the app.
 - Starting `app.py` replaces an older stale dashboard listener instead of falsely reporting that it is already running.
 - `codespace-repair.sh` verifies both `/api/info` and the actual root HTML before reporting success.
+- Existing Codespaces are forced to auto-forward port 8765 by printing `http://localhost:8765/`, then the script asks GitHub for the real forwarded `browseUrl` instead of guessing it.
 
 ## Refresh behavior
 
@@ -34,4 +35,4 @@ All existing creator colors, saved highlights, filters, column controls, row/con
 
 ## Version
 
-v1.1.4
+v1.1.5
