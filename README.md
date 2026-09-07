@@ -1,4 +1,4 @@
-# AA Efficiency Dashboard v1.1.1
+# AA Efficiency Dashboard v1.1.2
 
 Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 
@@ -10,6 +10,8 @@ Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 ## Main behavior
 
 - Intelligence and Coding are separate tabs and separate datasets.
+- Coding is scraped from AA server-rendered Coding Model Variants tables rather than depending on the chart UI.
+- Coding rows preserve the evaluated agent harness + model variant.
 - Refresh stores the full AA model leaderboard; Min INT is only a view filter.
 - INT/$ = Intelligence Index / Intelligence Cost per Task.
 - CODE/$ = Coding Agent Index / Coding Cost per Task.
@@ -30,4 +32,4 @@ Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 
 ## Version
 
-v1.1.1
+v1.1.2
