@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
-VERSION = "1.1.4"
+VERSION = "1.1.5"
 
 def resource_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -383,7 +383,12 @@ def main():
 
     print(f"AA Efficiency Dashboard v{VERSION}")
     print(f"Listening on {bind_host}:{port}")
-    print(f"Open it here: {public_url}")
+    print(f"Local: http://localhost:{port}/")
+    if in_codespaces:
+        print("Codespaces should auto-forward the localhost URL above.")
+        print(f"Expected forwarded address: {public_url}")
+    else:
+        print(f"Open it here: {public_url}")
 
     if not in_codespaces:
         threading.Timer(0.8, lambda: webbrowser.open(public_url)).start()
