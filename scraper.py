@@ -317,15 +317,31 @@ def extract_coding_from_json_loose(blobs: list[tuple[str, Any]], log: Callable[[
     candidates: list[dict[str, Any]] = []
 
     def scalar_map(d: dict[str, Any]) -> dict[str, Any]:
+        # AA's current Coding page is Next.js/RSC and much of the useful
+        # payload is nested several objects deep. Flatten scalar leaves while
+        # preserving their parent-key context.
         flat: dict[str, Any] = {}
-        for k, v in d.items():
-            nk = _nk(k)
-            if isinstance(v, (str, int, float)) and not isinstance(v, bool):
-                flat[nk] = v
-            elif isinstance(v, dict):
-                for sk, sv in v.items():
-                    if isinstance(sv, (str, int, float)) and not isinstance(sv, bool):
-                        flat[nk + _nk(sk)] = sv
+
+        def walk(obj: Any, prefix: str = "", depth: int = 0) -> None:
+            if depth > 5:
+                return
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    nk = _nk(k)
+                    key = prefix + nk
+                    if isinstance(v, (str, int, float)) and not isinstance(v, bool):
+                        flat[key] = v
+                        # Keep the leaf key too. This helps when AA moves the
+                        # same fields under a different wrapper object.
+                        flat.setdefault(nk, v)
+                    elif isinstance(v, (dict, list)):
+                        walk(v, key, depth + 1)
+            elif isinstance(obj, list):
+                for item in obj[:200]:
+                    if isinstance(item, (dict, list)):
+                        walk(item, prefix, depth + 1)
+
+        walk(d)
         return flat
 
     def first_text(flat: dict[str, Any], preferred: tuple[str, ...], contains: tuple[str, ...]) -> str:
@@ -345,30 +361,73 @@ def extract_coding_from_json_loose(blobs: list[tuple[str, Any]], log: Callable[[
                 continue
 
             score = None
-            # Strong coding-index names first.
+            coding_context = any(
+                token in k
+                for k in flat
+                for token in (
+                    "codingagent", "codingindex", "deepswe",
+                    "terminalbench", "sweatlas"
+                )
+            )
+
+            # Strong aggregate Coding Index field names first.
             for k, v in flat.items():
-                if "codingagentindex" in k or "codingindex" in k:
+                strong = (
+                    "codingagentindex" in k
+                    or "codingindex" in k
+                    or ("artificialanalysis" in k and "index" in k and coding_context)
+                )
+                if not strong:
+                    continue
+                n = _num(v)
+                if n is not None and 0 <= n <= 100:
+                    score = n * 100 if 0 < n <= 1 else n
+                    break
+
+            # AA has changed the surrounding schema more than once. When the
+            # record is unmistakably a coding-benchmark record, accept generic
+            # aggregate names as well.
+            if score is None and coding_context:
+                for k, v in flat.items():
+                    leaf = k.rsplit("data", 1)[-1]
+                    generic = (
+                        k in {
+                            "index", "score", "indexscore", "overallscore",
+                            "compositescore", "aggregate", "aggregatescore",
+                            "averagepass1", "pass1"
+                        }
+                        or leaf in {"index", "score", "indexscore", "overallscore"}
+                        or k.endswith(("codingagentscore", "compositescore", "overallscore"))
+                    )
+                    if not generic:
+                        continue
                     n = _num(v)
                     if n is not None and 0 <= n <= 100:
-                        score = n
+                        score = n * 100 if 0 < n <= 1 else n
                         break
 
-            # Some AA payloads shorten the metric to index/score inside a
-            # coding benchmark object. Only accept that when the record also
-            # carries obvious coding benchmark context.
-            if score is None:
-                coding_context = any(
-                    token in k
-                    for k in flat
-                    for token in ("codingagent", "deepswe", "terminalbench", "sweatlas")
-                )
-                if coding_context:
+            # Last-resort exact reconstruction from the three public index
+            # components. AA documents the Coding Agent Index as their simple
+            # average, so this is still the same Coding-page metric.
+            if score is None and coding_context:
+                component_values: list[float] = []
+                for token in ("deepswe", "terminalbench", "sweatlas"):
+                    vals: list[float] = []
                     for k, v in flat.items():
-                        if k in {"index", "score", "indexscore", "overallscore"} or k.endswith("index"):
-                            n = _num(v)
-                            if n is not None and 0 <= n <= 100:
-                                score = n
-                                break
+                        if token not in k:
+                            continue
+                        if any(bad in k for bad in ("cost", "token", "time", "taskcount", "attempt")):
+                            continue
+                        n = _num(v)
+                        if n is None or n < 0 or n > 100:
+                            continue
+                        n = n * 100 if 0 < n <= 1 else n
+                        vals.append(n)
+                    if vals:
+                        # Prefer a plausible percentage-like value.
+                        component_values.append(vals[0])
+                if len(component_values) == 3:
+                    score = sum(component_values) / 3.0
 
             if score is None:
                 continue
@@ -394,7 +453,11 @@ def extract_coding_from_json_loose(blobs: list[tuple[str, Any]], log: Callable[[
 
             cost = None
             for k, v in flat.items():
-                if "costpertask" in k or ("cost" in k and "task" in k):
+                if (
+                    "costpertask" in k
+                    or ("cost" in k and "task" in k)
+                    or k.endswith(("averagecost", "meancost", "taskcost"))
+                ):
                     n = _num(v)
                     if n is not None and n >= 0:
                         cost = n
@@ -459,25 +522,126 @@ def merge_sources(primary: list[dict[str, Any]], secondary: list[dict[str, Any]]
                         out[k][field] = x[field]
     return list(out.values())
 
+def _append_jsonish_text(
+    source: str,
+    txt: str,
+    blobs: list[tuple[str, Any]],
+    max_items: int = 500,
+) -> int:
+    """Pull JSON values out of normal JSON, Next.js RSC and inline scripts."""
+    txt = (txt or "").strip()
+    if not txt or len(txt) > 16_000_000:
+        return 0
+
+    added = 0
+    seen: set[str] = set()
+
+    def add(value: Any, suffix: str = "") -> None:
+        nonlocal added
+        if added >= max_items:
+            return
+        try:
+            sig = json.dumps(value, ensure_ascii=False, sort_keys=True)[:4000]
+        except Exception:
+            sig = repr(value)[:4000]
+        if sig in seen:
+            return
+        seen.add(sig)
+        blobs.append((source + suffix, value))
+        added += 1
+
+        # Next.js flight entries are commonly [id, "escaped payload"]. Parse
+        # that inner string too instead of throwing the whole script away.
+        if isinstance(value, list):
+            for i, item in enumerate(value[:20]):
+                if isinstance(item, str) and ("{" in item or "[" in item):
+                    parse_text(item, f"-str{i}")
+        elif isinstance(value, dict):
+            for k, item in list(value.items())[:50]:
+                if isinstance(item, str) and ("{" in item or "[" in item):
+                    parse_text(item, f"-{_nk(k)[:30]}")
+
+    def parse_text(text: str, suffix: str = "") -> None:
+        nonlocal added
+        if added >= max_items:
+            return
+        text = (text or "").strip()
+        if not text:
+            return
+
+        # Whole JSON value.
+        try:
+            add(json.loads(text), suffix)
+            return
+        except Exception:
+            pass
+
+        # Next.js: self.__next_f.push([1,"..."])
+        for m in re.finditer(r"__next_f\.push\((\[.*?\])\)\s*;?", text, re.S):
+            if added >= max_items:
+                break
+            try:
+                add(json.loads(m.group(1)), suffix + "-next")
+            except Exception:
+                pass
+
+        # RSC strings often contain valid JSON objects/arrays surrounded by
+        # protocol text. Scan for decodable JSON values instead of requiring
+        # the response to start with { or [.
+        decoder = json.JSONDecoder()
+        pos = 0
+        attempts = 0
+        while pos < len(text) and added < max_items and attempts < 1500:
+            brace = min(
+                [p for p in (text.find("{", pos), text.find("[", pos)) if p >= 0],
+                default=-1,
+            )
+            if brace < 0:
+                break
+            attempts += 1
+            try:
+                value, end = decoder.raw_decode(text, brace)
+                add(value, suffix + "-embedded")
+                pos = max(end, brace + 1)
+            except Exception:
+                pos = brace + 1
+
+    parse_text(txt)
+    return added
+
+
 def collect_script_json(page, blobs: list[tuple[str, Any]], log: Callable[[str], None]) -> None:
     scripts = page.locator("script")
     count = scripts.count()
     added = 0
-    for i in range(min(count, 300)):
+    for i in range(min(count, 400)):
         try:
             txt = scripts.nth(i).text_content() or ""
         except Exception:
             continue
-        txt = txt.strip()
-        if not txt or len(txt) > 12_000_000:
-            continue
-        if txt.startswith("{") or txt.startswith("["):
-            try:
-                blobs.append((f"inline-script-{i}", json.loads(txt)))
-                added += 1
-            except Exception:
-                pass
-    log(f"Parsed {added} inline JSON script blobs")
+        added += _append_jsonish_text(f"inline-script-{i}", txt, blobs)
+
+    # Next.js keeps the decoded RSC flight chunks here after hydration. This
+    # catches Coding data even when the raw <script> wrapper is not JSON.
+    try:
+        flight = page.evaluate(
+            "() => Array.isArray(window.__next_f) ? window.__next_f : []"
+        )
+        if flight:
+            blobs.append(("window.__next_f", flight))
+            added += 1
+            for i, item in enumerate(flight[:500]):
+                if isinstance(item, (dict, list)):
+                    blobs.append((f"window.__next_f-{i}", item))
+                    added += 1
+                elif isinstance(item, str):
+                    added += _append_jsonish_text(
+                        f"window.__next_f-{i}", item, blobs
+                    )
+    except Exception:
+        pass
+
+    log(f"Parsed {added} inline/Next.js data blobs")
 
 def save_debug(page, debug_dir: Path, prefix: str, blobs: list[tuple[str, Any]], log: Callable[[str], None]) -> None:
     debug_dir.mkdir(parents=True, exist_ok=True)
@@ -499,16 +663,28 @@ def attach_response_collector(page, blobs: list[tuple[str, Any]], log: Callable[
         try:
             ctype = (resp.headers or {}).get("content-type", "").lower()
             url = resp.url
-            if "json" not in ctype and not any(k in url.lower() for k in ("api", "benchmark", "leaderboard", "model")):
+            url_l = url.lower()
+            interesting = (
+                "json" in ctype
+                or "x-component" in ctype
+                or "text/plain" in ctype
+                or any(
+                    k in url_l
+                    for k in (
+                        "api", "benchmark", "leaderboard", "model",
+                        "coding", "agent", "_rsc"
+                    )
+                )
+            )
+            if not interesting:
                 return
             body = resp.body()
             if len(body) > 16_000_000:
                 return
             txt = body.decode("utf-8", errors="ignore").strip()
-            if not txt or txt[0] not in "[{":
+            if not txt:
                 return
-            data = json.loads(txt)
-            blobs.append((url, data))
+            _append_jsonish_text(url, txt, blobs)
         except Exception:
             pass
     page.on("response", on_response)
