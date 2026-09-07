@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
 import threading
+import time
 import traceback
 import webbrowser
 from http import HTTPStatus
@@ -13,7 +15,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
-VERSION = "1.1.3"
+VERSION = "1.1.4"
 
 def resource_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -223,8 +225,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "message": f"{target} refresh started"})
         self.send_error(404)
 
-def _dashboard_urls(host: str, port: int) -> tuple[str, str]:
-    local_url = f"http://{host}:{port}/"
+def _dashboard_urls(port: int) -> tuple[str, str]:
+    local_url = f"http://127.0.0.1:{port}/"
     codespace = os.environ.get("CODESPACE_NAME")
     if codespace:
         domain = os.environ.get(
@@ -237,27 +239,136 @@ def _dashboard_urls(host: str, port: int) -> tuple[str, str]:
     return local_url, public_url
 
 
-def _existing_dashboard_is_running(local_url: str) -> bool:
+def _dashboard_responds(local_url: str) -> bool:
     try:
         with urlopen(local_url + "api/info", timeout=1.5) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        return bool(payload.get("version"))
+        if not payload.get("version"):
+            return False
+        with urlopen(local_url, timeout=1.5) as response:
+            html = response.read(4096).decode("utf-8", errors="ignore")
+        return "AA Efficiency Dashboard" in html
     except Exception:
         return False
 
 
+def _linux_listener_pids(port: int) -> list[int]:
+    """Find PIDs that own LISTEN sockets on port using /proc only."""
+    if not sys.platform.startswith("linux"):
+        return []
+
+    wanted_inodes: set[str] = set()
+    port_hex = f"{port:04X}"
+
+    for procnet in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            lines = Path(procnet).read_text(encoding="utf-8", errors="ignore").splitlines()[1:]
+        except Exception:
+            continue
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 10:
+                continue
+            local = parts[1]
+            state_code = parts[3]
+            if ":" not in local or state_code != "0A":
+                continue
+            if local.rsplit(":", 1)[1].upper() != port_hex:
+                continue
+            wanted_inodes.add(parts[9])
+
+    if not wanted_inodes:
+        return []
+
+    pids: list[int] = []
+    proc = Path("/proc")
+    for pdir in proc.iterdir():
+        if not pdir.name.isdigit():
+            continue
+        try:
+            fd_dir = pdir / "fd"
+            for fd in fd_dir.iterdir():
+                try:
+                    target = os.readlink(fd)
+                except Exception:
+                    continue
+                if target.startswith("socket:[") and target[8:-1] in wanted_inodes:
+                    pids.append(int(pdir.name))
+                    break
+        except Exception:
+            continue
+    return sorted(set(pids))
+
+
+def _is_our_dashboard_process(pid: int) -> bool:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        cmd = raw.replace(b"\0", b" ").decode("utf-8", errors="ignore")
+    except Exception:
+        return False
+    return "app.py" in cmd and (
+        "AA-Efficiency-Dashboard" in cmd
+        or str(ROOT) in cmd
+    )
+
+
+def _stop_stale_codespace_dashboard(port: int) -> bool:
+    """Stop only an older instance of this dashboard that owns the port."""
+    stopped = False
+    for pid in _linux_listener_pids(port):
+        if pid == os.getpid() or not _is_our_dashboard_process(pid):
+            continue
+        try:
+            print(f"Replacing stale dashboard process PID {pid} on port {port}...")
+            os.kill(pid, signal.SIGTERM)
+            stopped = True
+        except ProcessLookupError:
+            pass
+
+    if not stopped:
+        return False
+
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        alive = [pid for pid in _linux_listener_pids(port) if _is_our_dashboard_process(pid)]
+        if not alive:
+            return True
+        time.sleep(0.1)
+
+    for pid in _linux_listener_pids(port):
+        if pid != os.getpid() and _is_our_dashboard_process(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    time.sleep(0.2)
+    return True
+
+
 def main():
-    host = "127.0.0.1"
     port = 8765
-    local_url, public_url = _dashboard_urls(host, port)
+    in_codespaces = bool(os.environ.get("CODESPACE_NAME"))
+    # Codespaces forwarding must be able to reach the service from outside
+    # the process namespace. Local Windows keeps loopback-only behavior.
+    bind_host = "0.0.0.0" if in_codespaces else "127.0.0.1"
+    local_url, public_url = _dashboard_urls(port)
 
     try:
-        server = ThreadingHTTPServer((host, port), Handler)
+        server = ThreadingHTTPServer((bind_host, port), Handler)
     except OSError as e:
-        # Codespaces starts the dashboard automatically. If the user runs
-        # python app.py again, do not crash just because our own server is
-        # already listening on 8765.
-        if getattr(e, "errno", None) in (48, 98, 10048) and _existing_dashboard_is_running(local_url):
+        if getattr(e, "errno", None) not in (48, 98, 10048):
+            raise
+
+        if in_codespaces:
+            # Never print "already running" and quit just because some old
+            # localhost process answers. Replace our stale listener and bind
+            # the current version to all interfaces so Codespaces can forward it.
+            if not _stop_stale_codespace_dashboard(port):
+                raise RuntimeError(
+                    f"Port {port} is in use by a process that is not this dashboard."
+                ) from e
+            server = ThreadingHTTPServer((bind_host, port), Handler)
+        elif _dashboard_responds(local_url):
             print("")
             print("AA Efficiency Dashboard is already running.")
             print(f"Open it here: {public_url}")
@@ -267,16 +378,23 @@ def main():
             except Exception:
                 pass
             return
-        raise
+        else:
+            raise
 
-    threading.Timer(0.8, lambda: webbrowser.open(public_url)).start()
-    print(f"AA Efficiency Dashboard: {public_url}")
+    print(f"AA Efficiency Dashboard v{VERSION}")
+    print(f"Listening on {bind_host}:{port}")
+    print(f"Open it here: {public_url}")
+
+    if not in_codespaces:
+        threading.Timer(0.8, lambda: webbrowser.open(public_url)).start()
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         server.server_close()
+
 
 if __name__ == "__main__":
     main()
