@@ -546,6 +546,138 @@ def extract_from_json(blobs: list[tuple[str, Any]], mode: str, log: Callable[[st
     log(f"JSON extraction ({mode}): {len(result)} unique model-like rows")
     return result
 
+def extract_coding_from_json_loose(blobs: list[tuple[str, Any]], log: Callable[[str], None]) -> list[dict[str, Any]]:
+    """Extract coding rows from AA JSON without depending on one exact schema."""
+    candidates: list[dict[str, Any]] = []
+
+    def scalar_map(d: dict[str, Any]) -> dict[str, Any]:
+        flat: dict[str, Any] = {}
+        for k, v in d.items():
+            nk = _nk(k)
+            if isinstance(v, (str, int, float)) and not isinstance(v, bool):
+                flat[nk] = v
+            elif isinstance(v, dict):
+                for sk, sv in v.items():
+                    if isinstance(sv, (str, int, float)) and not isinstance(sv, bool):
+                        flat[nk + _nk(sk)] = sv
+        return flat
+
+    def first_text(flat: dict[str, Any], preferred: tuple[str, ...], contains: tuple[str, ...]) -> str:
+        for key in preferred:
+            v = flat.get(key)
+            if isinstance(v, str) and 1 < len(v.strip()) < 180:
+                return v.strip()
+        for k, v in flat.items():
+            if isinstance(v, str) and all(word in k for word in contains) and 1 < len(v.strip()) < 180:
+                return v.strip()
+        return ""
+
+    for url, blob in blobs:
+        for d in _walk_dicts(blob):
+            flat = scalar_map(d)
+            if not flat:
+                continue
+
+            score = None
+            # Strong coding-index names first.
+            for k, v in flat.items():
+                if "codingagentindex" in k or "codingindex" in k:
+                    n = _num(v)
+                    if n is not None and 0 <= n <= 100:
+                        score = n
+                        break
+
+            # Some AA payloads shorten the metric to index/score inside a
+            # coding benchmark object. Only accept that when the record also
+            # carries obvious coding benchmark context.
+            if score is None:
+                coding_context = any(
+                    token in k
+                    for k in flat
+                    for token in ("codingagent", "deepswe", "terminalbench", "sweatlas")
+                )
+                if coding_context:
+                    for k, v in flat.items():
+                        if k in {"index", "score", "indexscore", "overallscore"} or k.endswith("index"):
+                            n = _num(v)
+                            if n is not None and 0 <= n <= 100:
+                                score = n
+                                break
+
+            if score is None:
+                continue
+
+            model = first_text(
+                flat,
+                ("model", "modelname", "modeldisplayname", "modelvariant", "variantname"),
+                ("model", "name"),
+            )
+            if not model:
+                continue
+
+            agent = first_text(
+                flat,
+                ("agent", "agentname", "harness", "harnessname"),
+                ("agent", "name"),
+            )
+            creator = first_text(
+                flat,
+                ("creator", "creatorname", "provider", "providername", "company", "organization"),
+                ("provider", "name"),
+            )
+
+            cost = None
+            for k, v in flat.items():
+                if "costpertask" in k or ("cost" in k and "task" in k):
+                    n = _num(v)
+                    if n is not None and n >= 0:
+                        cost = n
+                        break
+
+            candidates.append({
+                "model": model,
+                "creator": clean_creator(creator),
+                "score": score,
+                "cost": cost,
+                "agent": agent,
+                "_source": url,
+            })
+
+    best: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in candidates:
+        key = (_nk(row.get("agent", "")), normalize_model_name(row.get("model", "")))
+        if not key[1]:
+            continue
+        old = best.get(key)
+        quality = int(row.get("cost") is not None) + int(bool(row.get("creator"))) + int(bool(row.get("agent")))
+        old_quality = -1 if old is None else int(old.get("cost") is not None) + int(bool(old.get("creator"))) + int(bool(old.get("agent")))
+        if old is None or quality > old_quality:
+            best[key] = row
+
+    result = list(best.values())
+    log(f"Loose Coding JSON extraction: {len(result)} agent/model rows")
+    return result
+
+
+def merge_coding_sources(*sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge coding rows without collapsing different harnesses."""
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for source in sources:
+        for x in source:
+            model_key = normalize_model_name(x.get("model", ""))
+            if not model_key:
+                continue
+            agent_key = _nk(x.get("agent", ""))
+            key = (agent_key, model_key)
+            if key not in out:
+                out[key] = dict(x)
+            else:
+                for field in ("model", "creator", "score", "cost", "agent"):
+                    if x.get(field) not in (None, ""):
+                        out[key][field] = x[field]
+    return list(out.values())
+
+
 def merge_sources(primary: list[dict[str, Any]], secondary: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for source in (secondary, primary):  # primary wins
@@ -622,106 +754,102 @@ def _visible_count(locator) -> int:
         return 0
 
 def select_all_coding_models(page, log: Callable[[str], None]) -> tuple[int | None, int | None]:
-    # Find the visible "14 of 68 models" style control.
     current = total = None
-    count_loc = page.get_by_text(COUNT_RE).first
+
+    # AA renders several "14 of 68 models" labels. Prefer the actual button.
+    trigger = page.locator("button").filter(has_text=COUNT_RE).first
     try:
-        if count_loc.count():
-            txt = count_loc.inner_text(timeout=2000)
-            m = COUNT_RE.search(txt)
-            if m:
-                current, total = int(m.group(1)), int(m.group(2))
-                log(f"Coding selector initially reports {current} of {total} models")
-            # Click the smallest practical clickable ancestor.
-            clicked = False
-            for selector in ("button", '[role="button"]'):
-                try:
-                    anc = count_loc.locator(f"xpath=ancestor::{selector.replace('[role=\"button\"]','*[@role=\"button\"]')}[1]")
-                    if anc.count():
-                        anc.click(timeout=2500)
-                        clicked = True
-                        break
-                except Exception:
-                    pass
-            if not clicked:
-                count_loc.click(timeout=2500)
+        if trigger.count():
+            txt = trigger.inner_text(timeout=2500)
         else:
-            log("Could not find the 'N of N models' selector text")
-            return current, total
+            label = page.get_by_text(COUNT_RE).first
+            if not label.count():
+                log("Coding model selector was not found")
+                return current, total
+            txt = label.inner_text(timeout=2500)
+            trigger = label.locator("xpath=ancestor::button[1]")
+            if not trigger.count():
+                trigger = label
+
+        m = COUNT_RE.search(txt)
+        if m:
+            current, total = int(m.group(1)), int(m.group(2))
+            log(f"Coding selector initially reports {current} of {total} models")
+
+        trigger.click(timeout=3500)
+        page.wait_for_timeout(500)
     except Exception as e:
-        log(f"Could not open coding model selector: {e}")
+        log(f"Could not open Coding model selector: {e}")
         return current, total
 
-    page.wait_for_timeout(500)
-
-    # Preferred: explicit Select All / All Models action.
-    for pattern in (
-        re.compile(r"select\s+all", re.I),
-        re.compile(r"all\s+models", re.I),
-        re.compile(r"select\s+all\s+models", re.I),
+    clicked_select_all = False
+    for locator in (
+        page.get_by_role("button", name=re.compile(r"select\s+all", re.I)),
+        page.get_by_text(re.compile(r"^select\s+all(?:\s+models)?$", re.I)),
+        page.get_by_text(re.compile(r"^all\s+models$", re.I)),
     ):
         try:
-            loc = page.get_by_text(pattern).first
-            if loc.count() and loc.is_visible():
-                loc.click(timeout=2500)
-                log(f"Clicked coding selector action: {loc.inner_text(timeout=1000)!r}")
-                page.wait_for_timeout(800)
+            for i in range(min(locator.count(), 6)):
+                item = locator.nth(i)
+                if item.is_visible():
+                    item.click(timeout=2500, force=True)
+                    clicked_select_all = True
+                    log("Clicked Coding selector Select All")
+                    break
+            if clicked_select_all:
                 break
         except Exception:
             pass
-    else:
-        # Fallback: check every visible checkbox inside the most likely popover/dialog.
-        containers = [
-            page.locator('[role="dialog"]:visible'),
-            page.locator('[role="menu"]:visible'),
-            page.locator('[data-radix-popper-content-wrapper]:visible'),
-            page.locator('body'),
-        ]
-        checked = 0
-        for cont in containers:
-            try:
-                if not cont.count():
-                    continue
-                boxes = cont.first.locator('input[type="checkbox"]:visible')
-                if boxes.count() < 2:
-                    continue
-                for i in range(boxes.count()):
-                    box = boxes.nth(i)
-                    try:
-                        if not box.is_checked():
-                            box.check(timeout=1200, force=True)
-                            checked += 1
-                    except Exception:
-                        try:
-                            box.click(timeout=1200, force=True)
-                            checked += 1
-                        except Exception:
-                            pass
-                if checked:
-                    log(f"Checked {checked} model checkboxes in coding selector")
-                    break
-            except Exception:
-                pass
 
-    # Close popover if possible.
+    if not clicked_select_all:
+        # Handle native and custom Radix-style checkboxes.
+        boxes = page.locator(
+            'input[type="checkbox"]:visible,[role="checkbox"]:visible,button[role="checkbox"]:visible'
+        )
+        changed = 0
+        try:
+            for i in range(min(boxes.count(), 120)):
+                box = boxes.nth(i)
+                try:
+                    checked = box.get_attribute("aria-checked") == "true"
+                    if box.evaluate("el => el instanceof HTMLInputElement"):
+                        checked = box.is_checked()
+                    if checked:
+                        continue
+                    box.click(timeout=1200, force=True)
+                    changed += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        log(f"Coding selector enabled {changed} checkbox items")
+
     try:
         page.keyboard.press("Escape")
     except Exception:
         pass
-    page.wait_for_timeout(1200)
 
-    # Re-read count.
+    # Give AA time to update chart state and fire its data requests.
+    page.wait_for_timeout(1800)
     try:
-        loc = page.get_by_text(COUNT_RE).first
-        if loc.count():
-            txt = loc.inner_text(timeout=2000)
-            m = COUNT_RE.search(txt)
-            if m:
-                current2, total2 = int(m.group(1)), int(m.group(2))
-                log(f"Coding selector after expansion reports {current2} of {total2} models")
-                return current2, total2
+        page.wait_for_load_state("networkidle", timeout=7000)
     except Exception:
         pass
+
+    try:
+        labels = page.get_by_text(COUNT_RE)
+        for i in range(min(labels.count(), 12)):
+            txt = labels.nth(i).inner_text(timeout=1000)
+            m = COUNT_RE.search(txt)
+            if not m:
+                continue
+            c2, t2 = int(m.group(1)), int(m.group(2))
+            if total is None or t2 >= total:
+                current, total = c2, t2
+        log(f"Coding selector after expansion reports {current} of {total} models")
+    except Exception:
+        pass
+
     return current, total
 
 def force_lazy_sections(page, log: Callable[[str], None]) -> None:
@@ -825,7 +953,7 @@ def match_coding(int_model: str, coding_by_norm: dict[str, dict[str, Any]]) -> d
                 candidates.append(val)
     return candidates[0] if len(candidates) == 1 else None
 
-def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0) -> ScrapeResult:
+def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, target: str = "both") -> ScrapeResult:
     from playwright.sync_api import sync_playwright
 
     logs: list[str] = []
@@ -931,134 +1059,139 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0) -> S
             ),
         )
 
+        target = target if target in {"int", "coding", "both"} else "both"
+        models: list[dict[str, Any]] = []
+        coding: list[dict[str, Any]] = []
+        selected = total = None
+
+        if target in {"int", "both"}:
         # ---- Models leaderboard ----
-        model_page = context.new_page()
-        model_blobs: list[tuple[str, Any]] = []
-        attach_response_collector(model_page, model_blobs, log)
-        log(f"Loading model leaderboard: {MODEL_URL}")
-        model_page.goto(MODEL_URL, wait_until="domcontentloaded", timeout=90_000)
-        model_page.wait_for_timeout(2500)
-        try:
-            model_page.wait_for_load_state("networkidle", timeout=12_000)
-        except Exception:
-            pass
-        force_model_leaderboard_full_render(model_page, log)
-        try:
-            model_page.wait_for_load_state("networkidle", timeout=8_000)
-        except Exception:
-            pass
-        collect_script_json(model_page, model_blobs, log)
-        model_dom = extract_tables_from_dom(model_page, "models", log)
-        model_json = extract_from_json(model_blobs, "models", log)
-
-        model_http: list[dict[str, Any]] = []
-        try:
-            model_html = fetch_html_http(MODEL_URL, log)
-            model_http = parse_html_tables(model_html, "models", log)
-            (debug_dir / "models-http.html").write_text(model_html, encoding="utf-8")
-        except Exception as e:
-            log(f"HTTP model leaderboard fallback failed: {e}")
-
-        models = merge_sources(model_http, merge_sources(model_dom, model_json))
-        # Store the full AA leaderboard. Min INT is a GUI-only view filter;
-        # refreshing must never throw away models from the cache.
-        models = [x for x in models if x.get("score") is not None]
-        models.sort(key=lambda x: (-x["score"], x["model"].lower()))
-        save_debug(model_page, debug_dir, "models", model_blobs, log)
-        priced_models = sum(1 for x in models if x.get("cost") is not None)
-        log(f"Model leaderboard: {len(models)} scored rows, {priced_models} with Cost per Task")
-
+            model_page = context.new_page()
+            model_blobs: list[tuple[str, Any]] = []
+            attach_response_collector(model_page, model_blobs, log)
+            log(f"Loading model leaderboard: {MODEL_URL}")
+            model_page.goto(MODEL_URL, wait_until="domcontentloaded", timeout=90_000)
+            model_page.wait_for_timeout(2500)
+            try:
+                model_page.wait_for_load_state("networkidle", timeout=12_000)
+            except Exception:
+                pass
+            force_model_leaderboard_full_render(model_page, log)
+            try:
+                model_page.wait_for_load_state("networkidle", timeout=8_000)
+            except Exception:
+                pass
+            collect_script_json(model_page, model_blobs, log)
+            model_dom = extract_tables_from_dom(model_page, "models", log)
+            model_json = extract_from_json(model_blobs, "models", log)
+    
+            model_http: list[dict[str, Any]] = []
+            try:
+                model_html = fetch_html_http(MODEL_URL, log)
+                model_http = parse_html_tables(model_html, "models", log)
+                (debug_dir / "models-http.html").write_text(model_html, encoding="utf-8")
+            except Exception as e:
+                log(f"HTTP model leaderboard fallback failed: {e}")
+    
+            models = merge_sources(model_http, merge_sources(model_dom, model_json))
+            # Store the full AA leaderboard. Min INT is a GUI-only view filter;
+            # refreshing must never throw away models from the cache.
+            models = [x for x in models if x.get("score") is not None]
+            models.sort(key=lambda x: (-x["score"], x["model"].lower()))
+            save_debug(model_page, debug_dir, "models", model_blobs, log)
+            priced_models = sum(1 for x in models if x.get("cost") is not None)
+            log(f"Model leaderboard: {len(models)} scored rows, {priced_models} with Cost per Task")
+    
+            if target in {"coding", "both"}:
         # ---- Coding agent page ----
-        coding_page = context.new_page()
-        coding_blobs: list[tuple[str, Any]] = []
-        attach_response_collector(coding_page, coding_blobs, log)
-        log(f"Loading coding-agent page: {CODING_URL}")
-        coding_page.goto(CODING_URL, wait_until="domcontentloaded", timeout=90_000)
-        coding_page.wait_for_timeout(2500)
-        try:
-            coding_page.wait_for_load_state("networkidle", timeout=12_000)
-        except Exception:
-            pass
+            coding_page = context.new_page()
+            coding_blobs: list[tuple[str, Any]] = []
+            attach_response_collector(coding_page, coding_blobs, log)
+            log(f"Loading coding-agent page: {CODING_URL}")
+            coding_page.goto(CODING_URL, wait_until="domcontentloaded", timeout=90_000)
+            coding_page.wait_for_timeout(2500)
+            try:
+                coding_page.wait_for_load_state("networkidle", timeout=12_000)
+            except Exception:
+                pass
+    
+            selected, total = select_all_coding_models(coding_page, log)
+            force_lazy_sections(coding_page, log)
+            collect_script_json(coding_page, coding_blobs, log)
+    
+            coding_dom = extract_tables_from_dom(coding_page, "coding", log)
+            coding_json = extract_from_json(coding_blobs, "coding", log)
+            coding = merge_sources(coding_dom, coding_json)
+    
+            # Only the exact AA Coding page is used for Coding refreshes.
+            # Merge its rendered DOM, captured network JSON, looser JSON schema
+            # extraction, and its own server HTML. No model leaderboard and no
+            # comparison/sitemap pages are accessed here.
+            coding_loose = extract_coding_from_json_loose(coding_blobs, log)
+            coding_http: list[dict[str, Any]] = []
+            try:
+                coding_html = fetch_html_http(CODING_URL, log)
+                coding_http = parse_html_tables(coding_html, "coding", log)
+                (debug_dir / "coding-http.html").write_text(coding_html, encoding="utf-8")
+            except Exception as e:
+                log(f"HTTP Coding page parse failed: {e}")
 
-        selected, total = select_all_coding_models(coding_page, log)
-        force_lazy_sections(coding_page, log)
-        collect_script_json(coding_page, coding_blobs, log)
-
-        coding_dom = extract_tables_from_dom(coding_page, "coding", log)
-        coding_json = extract_from_json(coding_blobs, "coding", log)
-        coding = merge_sources(coding_dom, coding_json)
-
-        # The main Coding page is chart-driven and can expose zero tabular
-        # rows. AA's comparison pages expose the same benchmark data as normal
-        # server-rendered Model Variants tables, so prefer those whenever found.
-        try:
-            coding_main_html = fetch_html_http(CODING_URL, log)
-            coding_tables = crawl_coding_comparisons(coding_main_html, log)
-            if coding_tables:
-                coding = coding_tables
-                log("Using AA server-rendered Coding Model Variants tables")
-        except Exception as e:
-            log(f"Coding comparison-table scrape failed: {e}")
-
-        coding.sort(
-            key=lambda x: (
-                -x["score"],
-                str(x.get("agent") or "").lower(),
-                x["model"].lower(),
+            coding = merge_coding_sources(coding_dom, coding_json, coding_loose, coding_http)
+            log(
+                f"Coding exact-page sources: DOM={len(coding_dom)}, "
+                f"strictJSON={len(coding_json)}, looseJSON={len(coding_loose)}, "
+                f"HTML={len(coding_http)}, merged={len(coding)}"
             )
-        )
 
-        # Coding remains its own dataset. We only borrow creator metadata
-        # from the model leaderboard when AA's coding fallback table omits it.
-        model_meta_by_norm = {normalize_model_name(x["model"]): x for x in models}
-        for c in coding:
-            c["creator"] = clean_creator(c.get("creator"))
-            if not c.get("creator"):
-                exact = model_meta_by_norm.get(normalize_model_name(c.get("model", "")))
-                if exact:
-                    c["creator"] = clean_creator(exact.get("creator"))
+            coding.sort(
+                key=lambda x: (
+                    -x["score"],
+                    str(x.get("agent") or "").lower(),
+                    x["model"].lower(),
+                )
+            )
+    
+            # Coding remains its own dataset. We only borrow creator metadata
+            # from the model leaderboard when AA's coding fallback table omits it.
+            model_meta_by_norm = {normalize_model_name(x["model"]): x for x in models}
+            for c in coding:
+                c["creator"] = clean_creator(c.get("creator"))
+                if not c.get("creator"):
+                    exact = model_meta_by_norm.get(normalize_model_name(c.get("model", "")))
+                    if exact:
+                        c["creator"] = clean_creator(exact.get("creator"))
+    
+            save_debug(coding_page, debug_dir, "coding", coding_blobs, log)
+            log(f"Coding-agent extraction: {len(coding)} unique rows")
+    
+            browser.close()
 
-        save_debug(coding_page, debug_dir, "coding", coding_blobs, log)
-        log(f"Coding-agent extraction: {len(coding)} unique rows")
-
-        browser.close()
-
-    # Merge by model variant.
-    coding_by_norm = {normalize_model_name(x["model"]): x for x in coding}
+    # The GUI uses the two datasets independently. Keep the legacy merged
+    # field only when both sources were fetched in the same call.
     merged: list[dict[str, Any]] = []
     matched = 0
-    for m in models:
-        c = match_coding(m["model"], coding_by_norm)
-        if c:
-            matched += 1
-        int_cost = m.get("cost")
-        coding_cost = c.get("cost") if c else None
-        int_eff = (m["score"] / int_cost) if int_cost not in (None, 0) else None
-        coding_eff = (c["score"] / coding_cost) if c and coding_cost not in (None, 0) else None
-        merged.append({
-            "model": m["model"],
-            "creator": m.get("creator") or (c.get("creator") if c else "") or "",
-            "int": m["score"],
-            "int_cost": int_cost,
-            "int_eff": int_eff,
-            "coding": c.get("score") if c else None,
-            "coding_cost": coding_cost,
-            "coding_eff": coding_eff,
-            "coding_match": bool(c),
-            "coding_agent": c.get("agent") if c else None,
-        })
-
-    # Sort by INT efficiency, with N/A at bottom.
-    merged.sort(
-        key=lambda x: (
-            x["int_eff"] is None,
-            -(x["int_eff"] or -1),
-            -x["int"],
-            x["model"].lower(),
-        )
-    )
-    for i, x in enumerate(merged, 1):
-        x["rank"] = i if x["int_eff"] is not None else None
+    if models and coding:
+        coding_by_norm = {normalize_model_name(x["model"]): x for x in coding}
+        for m in models:
+            c = match_coding(m["model"], coding_by_norm)
+            if c:
+                matched += 1
+            int_cost = m.get("cost")
+            coding_cost = c.get("cost") if c else None
+            int_eff = (m["score"] / int_cost) if int_cost not in (None, 0) else None
+            coding_eff = (c["score"] / coding_cost) if c and coding_cost not in (None, 0) else None
+            merged.append({
+                "model": m["model"],
+                "creator": m.get("creator") or (c.get("creator") if c else "") or "",
+                "int": m["score"],
+                "int_cost": int_cost,
+                "int_eff": int_eff,
+                "coding": c.get("score") if c else None,
+                "coding_cost": coding_cost,
+                "coding_eff": coding_eff,
+                "coding_match": bool(c),
+                "coding_agent": c.get("agent") if c else None,
+            })
 
     meta = {
         "model_url": MODEL_URL,
@@ -1070,6 +1203,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0) -> S
         "coding_matched_to_int_rows": matched,
         "coding_selector_selected": selected,
         "coding_selector_total": total,
+        "refresh_target": target,
         "refreshed_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     log(
