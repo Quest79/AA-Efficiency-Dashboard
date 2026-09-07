@@ -1065,7 +1065,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
         selected = total = None
 
         if target in {"int", "both"}:
-        # ---- Models leaderboard ----
+            # ---- Models leaderboard ----
             model_page = context.new_page()
             model_blobs: list[tuple[str, Any]] = []
             attach_response_collector(model_page, model_blobs, log)
@@ -1084,7 +1084,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
             collect_script_json(model_page, model_blobs, log)
             model_dom = extract_tables_from_dom(model_page, "models", log)
             model_json = extract_from_json(model_blobs, "models", log)
-    
+
             model_http: list[dict[str, Any]] = []
             try:
                 model_html = fetch_html_http(MODEL_URL, log)
@@ -1092,18 +1092,16 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
                 (debug_dir / "models-http.html").write_text(model_html, encoding="utf-8")
             except Exception as e:
                 log(f"HTTP model leaderboard fallback failed: {e}")
-    
+
             models = merge_sources(model_http, merge_sources(model_dom, model_json))
-            # Store the full AA leaderboard. Min INT is a GUI-only view filter;
-            # refreshing must never throw away models from the cache.
             models = [x for x in models if x.get("score") is not None]
             models.sort(key=lambda x: (-x["score"], x["model"].lower()))
             save_debug(model_page, debug_dir, "models", model_blobs, log)
             priced_models = sum(1 for x in models if x.get("cost") is not None)
             log(f"Model leaderboard: {len(models)} scored rows, {priced_models} with Cost per Task")
-    
-            if target in {"coding", "both"}:
-        # ---- Coding agent page ----
+
+        if target in {"coding", "both"}:
+            # ---- Coding agent page ----
             coding_page = context.new_page()
             coding_blobs: list[tuple[str, Any]] = []
             attach_response_collector(coding_page, coding_blobs, log)
@@ -1114,20 +1112,20 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
                 coding_page.wait_for_load_state("networkidle", timeout=12_000)
             except Exception:
                 pass
-    
+
             selected, total = select_all_coding_models(coding_page, log)
             force_lazy_sections(coding_page, log)
+            try:
+                coding_page.wait_for_load_state("networkidle", timeout=8_000)
+            except Exception:
+                pass
             collect_script_json(coding_page, coding_blobs, log)
-    
+
             coding_dom = extract_tables_from_dom(coding_page, "coding", log)
             coding_json = extract_from_json(coding_blobs, "coding", log)
-            coding = merge_sources(coding_dom, coding_json)
-    
-            # Only the exact AA Coding page is used for Coding refreshes.
-            # Merge its rendered DOM, captured network JSON, looser JSON schema
-            # extraction, and its own server HTML. No model leaderboard and no
-            # comparison/sitemap pages are accessed here.
             coding_loose = extract_coding_from_json_loose(coding_blobs, log)
+
+            # Exact Coding URL only. No INT page, comparison pages, or sitemap.
             coding_http: list[dict[str, Any]] = []
             try:
                 coding_html = fetch_html_http(CODING_URL, log)
@@ -1137,12 +1135,6 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
                 log(f"HTTP Coding page parse failed: {e}")
 
             coding = merge_coding_sources(coding_dom, coding_json, coding_loose, coding_http)
-            log(
-                f"Coding exact-page sources: DOM={len(coding_dom)}, "
-                f"strictJSON={len(coding_json)}, looseJSON={len(coding_loose)}, "
-                f"HTML={len(coding_http)}, merged={len(coding)}"
-            )
-
             coding.sort(
                 key=lambda x: (
                     -x["score"],
@@ -1150,21 +1142,19 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
                     x["model"].lower(),
                 )
             )
-    
-            # Coding remains its own dataset. We only borrow creator metadata
-            # from the model leaderboard when AA's coding fallback table omits it.
-            model_meta_by_norm = {normalize_model_name(x["model"]): x for x in models}
+
             for c in coding:
                 c["creator"] = clean_creator(c.get("creator"))
-                if not c.get("creator"):
-                    exact = model_meta_by_norm.get(normalize_model_name(c.get("model", "")))
-                    if exact:
-                        c["creator"] = clean_creator(exact.get("creator"))
-    
+
             save_debug(coding_page, debug_dir, "coding", coding_blobs, log)
-            log(f"Coding-agent extraction: {len(coding)} unique rows")
-    
-            browser.close()
+            log(
+                f"Coding exact-page sources: selector={selected}/{total}, "
+                f"DOM={len(coding_dom)}, strictJSON={len(coding_json)}, "
+                f"looseJSON={len(coding_loose)}, HTML={len(coding_http)}, "
+                f"merged={len(coding)}"
+            )
+
+        browser.close()
 
     # The GUI uses the two datasets independently. Keep the legacy merged
     # field only when both sources were fetched in the same call.
