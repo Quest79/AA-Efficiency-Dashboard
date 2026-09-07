@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
-VERSION = "1.1.2"
+VERSION = "1.1.3"
 
 def resource_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -33,6 +33,7 @@ google_fonts_lock = threading.Lock()
 google_fonts_cache = {"families": [], "loaded_at": 0.0}
 state = {
     "refreshing": False,
+    "refresh_target": None,
     "last_error": None,
     "logs": [],
     "version": VERSION,
@@ -87,39 +88,61 @@ def write_cache(data):
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(CACHE_FILE)
 
-def run_refresh():
+def run_refresh(target: str):
+    target = "coding" if target == "coding" else "int"
     with state_lock:
         if state["refreshing"]:
             return
         state["refreshing"] = True
+        state["refresh_target"] = target
         state["last_error"] = None
-        state["logs"] = ["Starting live Artificial Analysis refresh..."]
+        state["logs"] = [f"Starting {target.upper()} refresh from its AA page only..."]
+
     try:
         from scraper import scrape_all
-        result = scrape_all(DATA_DIR, headless=True)
+
+        result = scrape_all(DATA_DIR, headless=True, target=target)
+        existing = read_cache()
         payload = {
-            "models": result.models,
-            "coding": result.coding,
-            "merged": result.merged,
-            "meta": result.meta,
+            "models": list(existing.get("models") or []),
+            "coding": list(existing.get("coding") or []),
+            "merged": list(existing.get("merged") or []),
+            "meta": dict(existing.get("meta") or {}),
             "logs": result.logs,
         }
 
-        priced_models = sum(1 for x in result.models if x.get("cost") is not None)
-        if len(result.models) < 40 or priced_models < 35:
-            raise RuntimeError(
-                f"Scrape looks incomplete: {len(result.models)} Intelligence rows, "
-                f"{priced_models} with Cost per Task. Refusing to replace the last "
-                "good cache. Diagnostics were saved."
-            )
-        if len(result.coding) < 20:
-            raise RuntimeError(
-                f"Coding scrape looks incomplete: only {len(result.coding)} rows. "
-                "Refusing to replace the last good cache. Diagnostics were saved."
-            )
-        write_cache(payload)
+        # Preserve the detailed scraper logs even if validation below fails.
         with state_lock:
-            state["logs"] = result.logs
+            state["logs"] = list(result.logs)
+
+        if target == "int":
+            priced_models = sum(1 for x in result.models if x.get("cost") is not None)
+            if len(result.models) < 40 or priced_models < 35:
+                raise RuntimeError(
+                    f"INT scrape looks incomplete: {len(result.models)} rows, "
+                    f"{priced_models} with Cost per Task. Existing INT cache kept."
+                )
+            payload["models"] = result.models
+            payload["meta"].update(result.meta)
+            payload["meta"]["coding_rows"] = len(payload["coding"])
+        else:
+            # Never throw away valid Coding rows just because AA currently
+            # exposes fewer than the advertised total. Zero is the only
+            # unusable result.
+            if not result.coding:
+                raise RuntimeError(
+                    "Coding scrape returned 0 rows from the Coding page. "
+                    "Existing Coding cache kept; open Diagnostics for exact source counts."
+                )
+            payload["coding"] = result.coding
+            payload["meta"].update(result.meta)
+            payload["meta"]["model_rows"] = len(payload["models"])
+            payload["meta"]["model_rows_with_cost"] = sum(
+                1 for x in payload["models"] if x.get("cost") is not None
+            )
+
+        write_cache(payload)
+
     except Exception as e:
         err = f"{type(e).__name__}: {e}"
         with state_lock:
@@ -132,6 +155,7 @@ def run_refresh():
     finally:
         with state_lock:
             state["refreshing"] = False
+            state["refresh_target"] = None
 
 class Handler(BaseHTTPRequestHandler):
     server_version = f"{APP_NAME}/{VERSION}"
@@ -191,11 +215,12 @@ class Handler(BaseHTTPRequestHandler):
                 req = json.loads(body or b"{}")
             except Exception:
                 req = {}
+            target = "coding" if req.get("target") == "coding" else "int"
             with state_lock:
                 if state["refreshing"]:
                     return self._json({"ok": False, "message": "Refresh already running"}, 409)
-            threading.Thread(target=run_refresh, daemon=True).start()
-            return self._json({"ok": True, "message": "Refresh started"})
+            threading.Thread(target=run_refresh, args=(target,), daemon=True).start()
+            return self._json({"ok": True, "message": f"{target} refresh started"})
         self.send_error(404)
 
 def _dashboard_urls(host: str, port: int) -> tuple[str, str]:
