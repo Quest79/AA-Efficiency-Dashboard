@@ -86,13 +86,6 @@ else:
     raise SystemExit(f"Dashboard did not start correctly: {last}")
 PY
 
-if [[ -n "${CODESPACE_NAME:-}" ]]; then
-  DOMAIN="${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
-  DASHBOARD_URL="https://${CODESPACE_NAME}-8765.${DOMAIN}/"
-else
-  DASHBOARD_URL="http://127.0.0.1:8765/"
-fi
-
 echo
 echo "=== Verifying Codespaces listener bind ==="
 if command -v ss >/dev/null 2>&1; then
@@ -102,6 +95,43 @@ if command -v ss >/dev/null 2>&1; then
     tail -100 /tmp/aa-dashboard.log || true
     exit 1
   }
+fi
+
+DASHBOARD_URL="http://127.0.0.1:8765/"
+
+if [[ -n "${CODESPACE_NAME:-}" ]]; then
+  echo
+  echo "=== Triggering Codespaces port forwarding ==="
+  # GitHub Codespaces watches terminal output for localhost URLs and
+  # automatically forwards those ports. Do not hide this URL in a log file.
+  echo "http://localhost:8765/"
+
+  # Give the Codespaces port-forwarder time to register the tunnel, then ask
+  # GitHub for the actual browse URL instead of constructing one blindly.
+  if command -v gh >/dev/null 2>&1; then
+    FORWARDED_URL=""
+    for _ in {1..20}; do
+      FORWARDED_URL="$(gh codespace ports -c "$CODESPACE_NAME"         --json sourcePort,browseUrl         --jq '.[] | select(.sourcePort == 8765) | .browseUrl' 2>/dev/null | head -n1 || true)"
+      if [[ -n "$FORWARDED_URL" ]]; then
+        break
+      fi
+      sleep 1
+    done
+
+    if [[ -n "$FORWARDED_URL" ]]; then
+      DASHBOARD_URL="$FORWARDED_URL"
+      echo "Codespaces port 8765 forwarded: OK"
+    else
+      echo
+      echo "ERROR: GitHub did not create the port-8765 tunnel."
+      echo "The dashboard itself IS running locally, but the Codespaces proxy is not forwarding it."
+      echo "Open the VS Code PORTS tab and confirm 8765 is listed, or rebuild the Codespace once."
+      exit 1
+    fi
+  else
+    DOMAIN="${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
+    DASHBOARD_URL="https://${CODESPACE_NAME}-8765.${DOMAIN}/"
+  fi
 fi
 
 echo
