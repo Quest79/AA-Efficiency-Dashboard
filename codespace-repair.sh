@@ -52,7 +52,9 @@ PY
 
 echo
 echo "=== Restarting dashboard ==="
+pkill -f '[p]ython.*AA-Efficiency-Dashboard.*/app.py' 2>/dev/null || true
 pkill -f '[p]ython.*app.py' 2>/dev/null || true
+sleep 0.3
 nohup python app.py >/tmp/aa-dashboard.log 2>&1 &
 
 echo
@@ -62,20 +64,26 @@ import json
 import time
 from urllib.request import urlopen
 
-url = "http://127.0.0.1:8765/api/info"
+info_url = "http://127.0.0.1:8765/api/info"
+root_url = "http://127.0.0.1:8765/"
 last = None
 for _ in range(30):
     try:
-        with urlopen(url, timeout=1) as r:
+        with urlopen(info_url, timeout=1) as r:
             data = json.loads(r.read().decode("utf-8"))
-        print("Dashboard health check: OK")
+        with urlopen(root_url, timeout=1) as r:
+            html = r.read(8192).decode("utf-8", errors="ignore")
+        if "AA Efficiency Dashboard" not in html:
+            raise RuntimeError("root page did not contain dashboard HTML")
+        print("Dashboard API health check: OK")
+        print("Dashboard root page: OK")
         print("Version:", data.get("version", "unknown"))
         break
     except Exception as e:
         last = e
         time.sleep(1)
 else:
-    raise SystemExit(f"Dashboard did not start: {last}")
+    raise SystemExit(f"Dashboard did not start correctly: {last}")
 PY
 
 if [[ -n "${CODESPACE_NAME:-}" ]]; then
@@ -83,6 +91,17 @@ if [[ -n "${CODESPACE_NAME:-}" ]]; then
   DASHBOARD_URL="https://${CODESPACE_NAME}-8765.${DOMAIN}/"
 else
   DASHBOARD_URL="http://127.0.0.1:8765/"
+fi
+
+echo
+echo "=== Verifying Codespaces listener bind ==="
+if command -v ss >/dev/null 2>&1; then
+  ss -ltn | grep -E '(^|[[:space:]])0\.0\.0\.0:8765[[:space:]]|\[::\]:8765' || {
+    echo "ERROR: dashboard is not listening on all interfaces at port 8765"
+    echo "--- /tmp/aa-dashboard.log ---"
+    tail -100 /tmp/aa-dashboard.log || true
+    exit 1
+  }
 fi
 
 echo
