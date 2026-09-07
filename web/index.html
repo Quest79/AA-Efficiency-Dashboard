@@ -302,6 +302,7 @@ const INT_COLUMNS=[
 ];
 const CODING_COLUMNS=[
  ["rank","Rank",52,36,100],["creator","Creator",120,70,260],["model","Model",470,220,900],
+ ["int_level","INT Level",480,160,760],
  ["coding","Coding",100,70,180],["coding_cost","Code $/Task",115,80,200],["coding_eff","Code/$",115,80,200],
  ["coding_agent","Harness",190,100,360]
 ];
@@ -750,13 +751,17 @@ async function loadData(){
  INT_DATA.sort((a,b)=>(b.int_eff??-Infinity)-(a.int_eff??-Infinity)||b.int-a.int||a.model.localeCompare(b.model));
  INT_DATA.forEach((x,i)=>x.rank=x.int_eff==null?null:i+1);
 
- const creatorByModel=new Map(INT_DATA.map(x=>[normalizeModelKey(x.model),x.creator]));
- CODING_DATA=(d.coding||[]).filter(c=>c.score!=null).map(c=>({
-   model:c.model||"",creator:c.creator||creatorByModel.get(normalizeModelKey(c.model))||"",
-   coding:Number(c.score),coding_cost:c.cost==null?null:Number(c.cost),
-   coding_eff:c.cost==null||Number(c.cost)===0?null:Number(c.score)/Number(c.cost),
-   coding_agent:c.agent||c.coding_agent||""
- }));
+ const intByModel=new Map(INT_DATA.map(x=>[normalizeModelKey(x.model),x]));
+ CODING_DATA=(d.coding||[]).filter(c=>c.score!=null).map(c=>{
+   const intMatch=intByModel.get(normalizeModelKey(c.model));
+   return {
+     model:c.model||"",creator:c.creator||(intMatch?.creator)||"",
+     int:intMatch?.int??null,
+     coding:Number(c.score),coding_cost:c.cost==null?null:Number(c.cost),
+     coding_eff:c.cost==null||Number(c.cost)===0?null:Number(c.score)/Number(c.cost),
+     coding_agent:c.agent||c.coding_agent||""
+   };
+ });
  CODING_DATA.sort((a,b)=>(b.coding_eff??-Infinity)-(a.coding_eff??-Infinity)||b.coding-a.coding||a.model.localeCompare(b.model));
  CODING_DATA.forEach((x,i)=>x.rank=x.coding_eff==null?null:i+1);
 
