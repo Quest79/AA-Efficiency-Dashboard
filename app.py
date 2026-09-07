@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 APP_NAME = "AAEfficiencyDashboard"
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 def resource_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -111,6 +111,11 @@ def run_refresh():
                 f"Scrape looks incomplete: {len(result.models)} Intelligence rows, "
                 f"{priced_models} with Cost per Task. Refusing to replace the last "
                 "good cache. Diagnostics were saved."
+            )
+        if len(result.coding) < 20:
+            raise RuntimeError(
+                f"Coding scrape looks incomplete: only {len(result.coding)} rows. "
+                "Refusing to replace the last good cache. Diagnostics were saved."
             )
         write_cache(payload)
         with state_lock:
