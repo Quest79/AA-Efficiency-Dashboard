@@ -479,8 +479,9 @@ function makeCell(x,key){
 
   if(key==="int_level"){
     const cell=document.createElement("div");cell.className="intlevel";cell.dataset.col="int_level";
-    cell.title=`INT ${fmt(x.int,0)} · one block per point starting at 40`;
-    const count=Math.max(0,Math.round(Number(x.int)||0)-39);
+    const minInt=Number(document.getElementById("threshold")?.value)||0;
+    cell.title=`INT ${fmt(x.int,0)} · one block per point starting at ${minInt}`;
+    const count=Math.max(0,Math.round(Number(x.int)||0)-Math.round(minInt)+1);
     for(let j=0;j<count;j++){const dot=document.createElement("span");dot.className="intdot";dot.style.background=creatorColor;cell.appendChild(dot)}
     return cell;
   }
@@ -735,9 +736,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.1.5 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.1.6 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.1.5 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.1.6 · SERVER ?";
  }
 }
 async function loadData(){
