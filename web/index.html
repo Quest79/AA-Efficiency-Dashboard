@@ -236,7 +236,7 @@ function installSidebarLayout(){
     </div>
     <div class="widthbox" style="margin-top:7px">
       <div class="mini"><span>Row height</span><span id="rowHeightValue">35px</span></div>
-      <input id="rowHeight" type="range" min="24" max="80" step="1" value="35">
+      <input id="rowHeight" type="range" min="12" max="80" step="1" value="35">
     </div>
   `;
   scroll.appendChild(scaleCard);
@@ -600,7 +600,7 @@ function bindRowScale(){
   applyRowScale();
 }
 function applyRowHeight(){
-  rowHeight=Math.max(24,Math.min(80,Math.round(Number(rowHeight)||35)));
+  rowHeight=Math.max(12,Math.min(80,Math.round(Number(rowHeight)||35)));
   document.documentElement.style.setProperty("--row-height",`${rowHeight}px`);
   const slider=document.getElementById("rowHeight");
   const value=document.getElementById("rowHeightValue");
@@ -736,9 +736,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.1.7 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.1.8 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.1.7 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.1.8 · SERVER ?";
  }
 }
 async function loadData(){
