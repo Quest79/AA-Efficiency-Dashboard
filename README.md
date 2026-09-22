@@ -1,4 +1,4 @@
-# AA Efficiency Dashboard v1.1.6
+# AA Efficiency Dashboard v1.1.7
 
 Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 
@@ -35,4 +35,4 @@ All existing creator colors, saved highlights, filters, column controls, row/con
 
 ## Version
 
-v1.1.6
+v1.1.7
