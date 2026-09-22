@@ -501,7 +501,7 @@ function makeCell(x,key){
 }
 function renderTable(){
  document.querySelectorAll("#table .row").forEach(e=>e.remove());
- DATA=currentData();
+ DATA=currentData().map((x,i)=>({...x,rank:i+1}));
  renderHeader();
  const table=document.getElementById("table");
  const template=gridTemplate();
@@ -736,9 +736,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.1.8 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.1.9 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.1.8 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.1.9 · SERVER ?";
  }
 }
 async function loadData(){
