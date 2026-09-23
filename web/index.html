@@ -9,7 +9,7 @@
   --bg:#171717;--panel:#202020;--panel2:#272727;--line:#3d3d3d;--line2:#575757;
   --text:#f4f4f4;--muted:#aaa;--search:#ffd54f;--good:#86efac;--bad:#fca5a5;
   --w-rank:52px;--w-creator:120px;--w-model:470px;--w-int:72px;--w-intcost:105px;
-  --w-inteff:105px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--w-codingagent:190px;--row-scale:1;--row-height:35px;--app-font:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --w-inteff:105px;--w-speed:90px;--w-intlevel:480px;--w-coding:100px;--w-codingcost:115px;--w-codingeff:115px;--w-codingagent:190px;--row-scale:1;--row-height:35px;--app-font:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 }
 *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--text);height:100%;overflow:hidden}
 body{font-family:var(--app-font)}
@@ -109,7 +109,7 @@ input.creatorswatch{width:calc(15px * var(--row-scale));height:calc(var(--row-he
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.1.5 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.2.0 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -178,6 +178,7 @@ input.creatorswatch{width:calc(15px * var(--row-scale));height:calc(var(--row-he
           <div class="r" data-col="int">INT</div>
           <div class="r" data-col="int_cost">INT $/TASK</div>
           <div class="r" data-col="int_eff">INT/$</div>
+          <div class="r" data-col="speed">TOK/S</div>
           <div data-col="int_level">INT LEVEL</div>
           <div class="r" data-col="coding">CODING</div>
           <div class="r" data-col="coding_cost">CODE $/TASK</div>
@@ -189,6 +190,7 @@ input.creatorswatch{width:calc(15px * var(--row-scale));height:calc(var(--row-he
       <span>INTELLIGENCE tab = https://artificialanalysis.ai/leaderboards/models</span>
       <span>CODING tab = AA Coding Agent Index, stored independently</span>
       <span>INT/$ and CODE/$ are each score ÷ that tab's Cost per Task</span>
+      <span>TOK/S = AA Median Tokens/s</span>
     </div>
   </section>
 </div>
@@ -291,14 +293,14 @@ let META={};
 const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", ROW_HEIGHT_KEY="aa-live-row-height-v1", TAB_KEY="aa-live-active-tab-v1", FONT_KEY="aa-live-font-v1";
 const fields={
  model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
- int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},
+ int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},speed:{label:"TOK/S",type:"number"},
  coding:{label:"Coding",type:"number"},coding_cost:{label:"Coding $/Task",type:"number"},coding_eff:{label:"Coding/$",type:"number"},
  coding_agent:{label:"Harness",type:"text"}
 };
 const INT_COLUMNS=[
  ["rank","Rank",52,36,100],["creator","Creator",120,70,260],["model","Model",470,220,900],
  ["int","INT",72,50,140],["int_cost","INT $/Task",105,75,190],["int_eff","INT/$",105,75,190],
- ["int_level","INT Level",480,160,760]
+ ["speed","TOK/S",90,60,160],["int_level","INT Level",480,160,760]
 ];
 const CODING_COLUMNS=[
  ["rank","Rank",52,36,100],["creator","Creator",120,70,260],["model","Model",470,220,900],
@@ -401,7 +403,7 @@ let pending=[];
 
 const fmt=(v,d=1)=>v==null?"N/A":Number(v).toFixed(d);
 const fmtCost=v=>v==null?"N/A":"$"+Number(v).toFixed(2);
-const rowText=x=>[x.rank,x.creator,x.model,x.int,x.int_cost,x.int_eff,"int level",x.coding,x.coding_cost,x.coding_eff,x.coding_agent].join(" ").toLowerCase();
+const rowText=x=>[x.rank,x.creator,x.model,x.int,x.int_cost,x.int_eff,x.speed,"int level",x.coding,x.coding_cost,x.coding_eff,x.coding_agent].join(" ").toLowerCase();
 function currentData(){
   if(activeTab==="coding")return CODING_DATA;
   const minInt=Number(document.getElementById("threshold")?.value)||0;
@@ -418,8 +420,9 @@ function updateMeta(){
       : "No Coding data cached yet. Click Refresh AA Data.";
   }else{
     const priced=META.model_rows_with_cost??INT_DATA.filter(x=>x.int_cost!=null).length;
+    const speedCount=META.model_rows_with_speed??INT_DATA.filter(x=>x.speed!=null).length;
     meta.textContent=INT_DATA.length
-      ? `Last refresh: ${META.refreshed_at||"unknown"} · ${INT_DATA.length} scored AA models · ${priced} with Cost per Task · showing ${currentData().length}`
+      ? `Last refresh: ${META.refreshed_at||"unknown"} · ${INT_DATA.length} scored AA models · ${priced} with Cost per Task · ${speedCount} with Median Tokens/s · showing ${currentData().length}`
       : "No Intelligence data cached yet. Click Refresh AA Data.";
   }
 }
@@ -460,7 +463,7 @@ function renderHeader(){
  for(const [k,label] of visibleColumns()){
    const cell=document.createElement("div");
    cell.dataset.col=k;
-   if(["rank","int","int_cost","int_eff","coding","coding_cost","coding_eff"].includes(k))cell.className="r";
+   if(["rank","int","int_cost","int_eff","speed","coding","coding_cost","coding_eff"].includes(k))cell.className="r";
    cell.textContent=label.toUpperCase();
    header.appendChild(cell);
  }
@@ -488,12 +491,12 @@ function makeCell(x,key){
 
   const cell=document.createElement("div");
   cell.dataset.col=key;
-  if(["rank","int","int_cost","int_eff","coding","coding_cost","coding_eff"].includes(key))cell.className="r";
+  if(["rank","int","int_cost","int_eff","speed","coding","coding_cost","coding_eff"].includes(key))cell.className="r";
   if(key==="model"){cell.classList.add("model");cell.title=x.model||""}
   if(key==="coding_agent" && !x.coding_agent)cell.classList.add("nomatch");
 
   const values={
-    rank:x.rank??"—", model:x.model||"", int:fmt(x.int,0), int_cost:fmtCost(x.int_cost), int_eff:fmt(x.int_eff,1),
+    rank:x.rank??"—", model:x.model||"", int:fmt(x.int,0), int_cost:fmtCost(x.int_cost), int_eff:fmt(x.int_eff,1), speed:fmt(x.speed,0),
     coding:fmt(x.coding,1), coding_cost:fmtCost(x.coding_cost), coding_eff:fmt(x.coding_eff,1), coding_agent:x.coding_agent||"N/A"
   };
   cell.textContent=values[key]??"";
@@ -736,9 +739,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.1.9 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.2.0 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.1.9 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.2.0 · SERVER ?";
  }
 }
 async function loadData(){
@@ -747,7 +750,8 @@ async function loadData(){
 
  INT_DATA=(d.models||[]).filter(m=>m.score!=null).map(m=>({
    model:m.model||"",creator:m.creator||"",int:Number(m.score),int_cost:m.cost==null?null:Number(m.cost),
-   int_eff:m.cost==null||Number(m.cost)===0?null:Number(m.score)/Number(m.cost)
+   int_eff:m.cost==null||Number(m.cost)===0?null:Number(m.score)/Number(m.cost),
+   speed:m.speed==null?null:Number(m.speed)
  }));
  INT_DATA.sort((a,b)=>(b.int_eff??-Infinity)-(a.int_eff??-Infinity)||b.int-a.int||a.model.localeCompare(b.model));
  INT_DATA.forEach((x,i)=>x.rank=x.int_eff==null?null:i+1);
@@ -796,7 +800,7 @@ document.getElementById("search").oninput=apply;document.getElementById("clearSe
 document.getElementById("threshold").oninput=()=>{if(activeTab==="int"){renderTable();updateMeta()}};
 document.getElementById("refresh").onclick=refresh;document.getElementById("logsBtn").onclick=()=>document.getElementById("logbox").classList.toggle("open");
 document.getElementById("resetWidths").onclick=()=>{widths=Object.fromEntries(ALL_COLUMNS.map(x=>[x[0],x[2]]));save(WKEY,widths);setupColumns();renderTable()};
-document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,int_level:300,coding:82,coding_cost:98,coding_eff:98,coding_agent:150};save(WKEY,widths);setupColumns();renderTable()};
+document.getElementById("compact").onclick=()=>{widths={rank:42,creator:95,model:340,int:60,int_cost:88,int_eff:88,speed:72,int_level:300,coding:82,coding_cost:98,coding_eff:98,coding_agent:150};save(WKEY,widths);setupColumns();renderTable()};
 installSidebarLayout();document.querySelectorAll(".tabbtn").forEach(b=>b.onclick=()=>setActiveTab(b.dataset.tab));bindRowScale();bindRowHeight();bindFonts();renderPending();renderFilters();renderHide();updateTabs();setupColumns();loadVersion();loadData();pollStatus();setInterval(()=>{pollStatus();loadVersion()},1000);
 </script>
 </body>
