@@ -1,15 +1,16 @@
-# AA Efficiency Dashboard v1.1.9
+# AA Efficiency Dashboard v1.2.0
 
 Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 
 ## Exact refresh sources
 
-- Intelligence tab refreshes only:
+- Intelligence refresh reads:
   https://artificialanalysis.ai/leaderboards/models
-- Coding tab refreshes only:
+- Coding refresh reads:
   https://artificialanalysis.ai/agents/coding-agents
+  and also reads the model leaderboard only to join shared model metadata such as Cost per Task.
 
-A tab refresh does not open or scrape the other tab's source.
+Refreshing Coding does not overwrite the Intelligence cache.
 
 ## Codespaces
 
@@ -33,6 +34,8 @@ A tab refresh does not open or scrape the other tab's source.
 
 All existing creator colors, saved highlights, filters, column controls, row/content scaling, row height, and font controls are preserved.
 
+The Intelligence table also shows `TOK/S`, scraped from Artificial Analysis' `Median Tokens/s` field and paired directly from the same model leaderboard row. Models without an AA speed result show `N/A`.
+
 ## Version
 
-v1.1.9
+v1.2.0
