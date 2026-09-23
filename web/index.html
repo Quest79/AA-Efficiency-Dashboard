@@ -89,7 +89,7 @@ input[type=color]{height:34px;padding:3px}
 .row{border-bottom:1px solid rgba(255,255,255,.055);height:var(--row-height);min-height:var(--row-height);font-size:calc(16px * var(--row-scale));background:var(--row-bg,transparent)}
 .row:hover{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
 .row.searchmatch{background:linear-gradient(rgba(255,213,79,.30),rgba(255,213,79,.30)),var(--row-bg,transparent);box-shadow:inset 0 0 0 2px rgba(255,213,79,.9)}
-.r{text-align:right;font-variant-numeric:tabular-nums}.model{overflow:hidden;text-overflow:ellipsis}
+.r{text-align:right;font-variant-numeric:tabular-nums}.header .sortable{cursor:pointer;user-select:none}.header .sortable:hover{background:rgba(255,255,255,.06)}.model{overflow:hidden;text-overflow:ellipsis}
 .creatorcell{display:flex;align-items:center;gap:calc(7px * var(--row-scale));font-weight:700;overflow:hidden;min-width:0}
 input.creatorswatch{width:calc(15px * var(--row-scale));height:calc(var(--row-height) - 4px);min-height:0;max-height:calc(var(--row-height) - 4px);min-width:calc(15px * var(--row-scale));padding:0;margin:0;border:1px solid rgba(255,255,255,.35);border-radius:4px;background:transparent;cursor:pointer}
 .creatorswatch::-webkit-color-swatch-wrapper{padding:0}.creatorswatch::-webkit-color-swatch{border:0;border-radius:3px}
@@ -109,7 +109,7 @@ input.creatorswatch{width:calc(15px * var(--row-scale));height:calc(var(--row-he
 <div class="app">
   <div class="top">
     <div>
-      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.2.0 · SERVER …</span></h1>
+      <h1>AA EFFICIENCY DASHBOARD <span class="versionbadge" id="appVersion">GUI v1.2.1 · SERVER …</span></h1>
       <div class="sub" id="meta">Live Artificial Analysis Intelligence + Coding Agent data</div>
     </div>
     <div class="actions">
@@ -290,7 +290,7 @@ let DATA=[];
 let INT_DATA=[];
 let CODING_DATA=[];
 let META={};
-const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", ROW_HEIGHT_KEY="aa-live-row-height-v1", TAB_KEY="aa-live-active-tab-v1", FONT_KEY="aa-live-font-v1";
+const FKEY="aa-live-filters-v1", HKEY="aa-live-hide-v1", CKEY="aa-live-cols-v1", WKEY="aa-live-width-v1", CREATOR_COLOR_KEY="aa-live-creator-colors-v1", ROW_SCALE_KEY="aa-live-row-scale-v1", ROW_HEIGHT_KEY="aa-live-row-height-v1", TAB_KEY="aa-live-active-tab-v1", FONT_KEY="aa-live-font-v1", SORT_KEY="aa-live-sort-v1";
 const fields={
  model:{label:"Model",type:"text"},creator:{label:"Creator",type:"text"},int:{label:"INT",type:"number"},
  int_cost:{label:"INT $/Task",type:"number"},int_eff:{label:"INT/$",type:"number"},speed:{label:"TOK/S",type:"number"},
@@ -373,6 +373,7 @@ const load=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):st
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 let fontChoice=load(FONT_KEY,{source:"system",family:""});
 activeTab=load(TAB_KEY,"int");
+let sortByTab=load(SORT_KEY,{int:null,coding:null});
 let creatorColorOverrides=load(CREATOR_COLOR_KEY,{});
 function creatorStorageKey(name){return String(name??"").trim().toLowerCase()}
 function creatorColorFor(name){
@@ -411,6 +412,39 @@ function currentData(){
 }
 function visibleColumns(){return activeColumns().filter(([k])=>colVis[k]!==false)}
 function gridTemplate(){return visibleColumns().map(([k])=>`var(--w-${k.replaceAll("_","")})`).join(" ")}
+function sortKeyForColumn(key){return key==="int_level"?"int":key}
+function compareSortValues(a,b,key){
+  const av=a?.[key],bv=b?.[key];
+  const am=av==null || av==="" || (typeof av==="number" && !Number.isFinite(av));
+  const bm=bv==null || bv==="" || (typeof bv==="number" && !Number.isFinite(bv));
+  if(am||bm)return am===bm?0:am?1:-1;
+  if(typeof av==="number" || typeof bv==="number")return Number(av)-Number(bv);
+  return String(av).localeCompare(String(bv),undefined,{numeric:true,sensitivity:"base"});
+}
+function sortRows(rows){
+  const state=sortByTab[activeTab];
+  if(!state?.key)return rows;
+  const key=sortKeyForColumn(state.key),dir=state.dir==="desc"?-1:1;
+  return rows
+    .map((row,index)=>({row,index}))
+    .sort((a,b)=>{
+      const av=a.row?.[key],bv=b.row?.[key];
+      const am=av==null || av==="" || (typeof av==="number" && !Number.isFinite(av));
+      const bm=bv==null || bv==="" || (typeof bv==="number" && !Number.isFinite(bv));
+      if(am||bm)return am===bm?a.index-b.index:am?1:-1;
+      const cmp=compareSortValues(a.row,b.row,key);
+      return cmp?cmp*dir:a.index-b.index;
+    })
+    .map(x=>x.row);
+}
+function toggleSort(key){
+  const current=sortByTab[activeTab];
+  sortByTab[activeTab]=current?.key===key
+    ? {key,dir:current.dir==="asc"?"desc":"asc"}
+    : {key,dir:"asc"};
+  save(SORT_KEY,sortByTab);
+  renderTable();
+}
 function updateMeta(){
   const meta=document.getElementById("meta");
   if(!meta)return;
@@ -460,11 +494,16 @@ function renderHeader(){
  if(!header)return;
  header.innerHTML="";
  header.style.gridTemplateColumns=gridTemplate();
+ const activeSort=sortByTab[activeTab];
  for(const [k,label] of visibleColumns()){
    const cell=document.createElement("div");
    cell.dataset.col=k;
-   if(["rank","int","int_cost","int_eff","speed","coding","coding_cost","coding_eff"].includes(k))cell.className="r";
-   cell.textContent=label.toUpperCase();
+   cell.classList.add("sortable");
+   if(["rank","int","int_cost","int_eff","speed","coding","coding_cost","coding_eff"].includes(k))cell.classList.add("r");
+   const isActive=activeSort?.key===k;
+   cell.textContent=label.toUpperCase()+(isActive?(activeSort.dir==="asc"?" ▲":" ▼"):"");
+   cell.title=`Sort by ${label} ${isActive?(activeSort.dir==="asc"?"descending":"ascending"):"ascending"}`;
+   cell.addEventListener("click",()=>toggleSort(k));
    header.appendChild(cell);
  }
 }
@@ -504,7 +543,8 @@ function makeCell(x,key){
 }
 function renderTable(){
  document.querySelectorAll("#table .row").forEach(e=>e.remove());
- DATA=currentData().map((x,i)=>({...x,rank:i+1}));
+ const ranked=currentData().map((x,i)=>({...x,rank:i+1}));
+ DATA=sortRows(ranked);
  renderHeader();
  const table=document.getElementById("table");
  const template=gridTemplate();
@@ -739,9 +779,9 @@ function syncBuilderCreatorColor(){
 async function loadVersion(){
  try{
   const info=await fetch("/api/info",{cache:"no-store"}).then(r=>r.json());
-  document.getElementById("appVersion").textContent=`GUI v1.2.0 · SERVER v${info.version||"?"}`;
+  document.getElementById("appVersion").textContent=`GUI v1.2.1 · SERVER v${info.version||"?"}`;
  }catch(e){
-  document.getElementById("appVersion").textContent="GUI v1.2.0 · SERVER ?";
+  document.getElementById("appVersion").textContent="GUI v1.2.1 · SERVER ?";
  }
 }
 async function loadData(){
