@@ -142,6 +142,9 @@ def run_refresh(target: str):
             payload["meta"]["model_rows_with_cost"] = sum(
                 1 for x in payload["models"] if x.get("cost") is not None
             )
+            payload["meta"]["model_rows_with_speed"] = sum(
+                1 for x in payload["models"] if x.get("speed") is not None
+            )
 
         write_cache(payload)
 
