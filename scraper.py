@@ -35,6 +35,11 @@ MODEL_COST_ALIASES = {
     "costpertaskusd", "cost_per_task_usd", "averagecostpertask",
     "average_cost_per_task"
 }
+SPEED_ALIASES = {
+    "mediantokenss", "median_tokens_s", "mediantokenspersecond",
+    "median_tokens_per_second", "outputspeed", "output_speed",
+    "tokenspersecond", "tokens_per_second", "tokenss", "tokens_s"
+}
 CODING_ALIASES = {
     "codingagentindex", "coding_agent_index",
     "artificialanalysiscodingagentindex", "artificial_analysis_coding_agent_index",
@@ -95,8 +100,8 @@ def parse_html_tables(html_text: str, mode: str, log: Callable[[str], None]) -> 
         if not key:
             continue
         old = dedup.get(key)
-        quality = int(row.get("score") is not None) + int(row.get("cost") is not None) + int(bool(row.get("creator")))
-        old_quality = -1 if old is None else int(old.get("score") is not None) + int(old.get("cost") is not None) + int(bool(old.get("creator")))
+        quality = int(row.get("score") is not None) + int(row.get("cost") is not None) + int(row.get("speed") is not None) + int(bool(row.get("creator")))
+        old_quality = -1 if old is None else int(old.get("score") is not None) + int(old.get("cost") is not None) + int(old.get("speed") is not None) + int(bool(old.get("creator")))
         if old is None or quality > old_quality:
             dedup[key] = row
 
@@ -193,18 +198,20 @@ def parse_table_rows(headers: list[str], rows: list[list[str]], mode: str) -> li
     if mode == "models":
         score_i = find_col(("intelligence",))
         cost_i = find_col(("cost", "task"))
+        speed_i = find_col(("median", "tokens"))
     else:
         score_i = find_col(("coding", "agent", "index"))
         if score_i is None:
             score_i = find_col(("index",))
         cost_i = find_col(("cost", "task"))
+        speed_i = None
 
     if model_i is None or score_i is None:
         return []
 
     out = []
     for cells in rows:
-        if len(cells) <= max(model_i, score_i, cost_i or 0, creator_i or 0):
+        if len(cells) <= max(model_i, score_i, cost_i or 0, speed_i or 0, creator_i or 0):
             continue
         model = cells[model_i].strip()
         score = _num(cells[score_i])
@@ -215,6 +222,7 @@ def parse_table_rows(headers: list[str], rows: list[list[str]], mode: str) -> li
             "creator": clean_creator(cells[creator_i]) if creator_i is not None else "",
             "score": score,
             "cost": _num(cells[cost_i]) if cost_i is not None else None,
+            "speed": _num(cells[speed_i]) if speed_i is not None else None,
         }
         out.append(item)
     return out
@@ -260,8 +268,8 @@ def extract_tables_from_dom(page, mode: str, log: Callable[[str], None]) -> list
         if not key:
             continue
         old = dedup.get(key)
-        quality = int(row.get("score") is not None) + int(row.get("cost") is not None) + int(bool(row.get("creator")))
-        old_quality = -1 if old is None else int(old.get("score") is not None) + int(old.get("cost") is not None) + int(bool(old.get("creator")))
+        quality = int(row.get("score") is not None) + int(row.get("cost") is not None) + int(row.get("speed") is not None) + int(bool(row.get("creator")))
+        old_quality = -1 if old is None else int(old.get("score") is not None) + int(old.get("cost") is not None) + int(old.get("speed") is not None) + int(bool(old.get("creator")))
         if old is None or quality > old_quality:
             dedup[key] = row
 
@@ -274,6 +282,7 @@ def extract_from_json(blobs: list[tuple[str, Any]], mode: str, log: Callable[[st
 
     score_aliases = INT_ALIASES if mode == "models" else CODING_ALIASES
     cost_aliases = MODEL_COST_ALIASES if mode == "models" else CODING_COST_ALIASES
+    speed_aliases = SPEED_ALIASES if mode == "models" else set()
 
     for url, blob in blobs:
         for d in _walk_dicts(blob):
@@ -286,6 +295,7 @@ def extract_from_json(blobs: list[tuple[str, Any]], mode: str, log: Callable[[st
                 continue
             _, creator = _key_lookup(d, CREATOR_ALIASES)
             _, cost = _key_lookup(d, cost_aliases)
+            _, speed = _key_lookup(d, speed_aliases) if speed_aliases else (None, None)
             model_s = str(model).strip()
             if len(model_s) < 2 or len(model_s) > 160:
                 continue
@@ -294,6 +304,7 @@ def extract_from_json(blobs: list[tuple[str, Any]], mode: str, log: Callable[[st
                 "creator": clean_creator(creator),
                 "score": sv,
                 "cost": _num(cost),
+                "speed": _num(speed),
                 "_source": url,
             })
 
@@ -304,8 +315,8 @@ def extract_from_json(blobs: list[tuple[str, Any]], mode: str, log: Callable[[st
         if not k:
             continue
         old = dedup.get(k)
-        quality = (x["cost"] is not None) + bool(x["creator"])
-        oldq = -1 if old is None else (old["cost"] is not None) + bool(old["creator"])
+        quality = (x["cost"] is not None) + (x.get("speed") is not None) + bool(x["creator"])
+        oldq = -1 if old is None else (old["cost"] is not None) + (old.get("speed") is not None) + bool(old["creator"])
         if old is None or quality > oldq:
             dedup[k] = x
     result = list(dedup.values())
@@ -517,7 +528,7 @@ def merge_sources(primary: list[dict[str, Any]], secondary: list[dict[str, Any]]
             if k not in out:
                 out[k] = dict(x)
             else:
-                for field in ("model", "creator", "score", "cost"):
+                for field in ("model", "creator", "score", "cost", "speed"):
                     if x.get(field) not in (None, ""):
                         out[k][field] = x[field]
     return list(out.values())
@@ -1046,7 +1057,11 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
             models.sort(key=lambda x: (-x["score"], x["model"].lower()))
             save_debug(model_page, debug_dir, "models", model_blobs, log)
             priced_models = sum(1 for x in models if x.get("cost") is not None)
-            log(f"Model leaderboard: {len(models)} scored rows, {priced_models} with Cost per Task")
+            speed_models = sum(1 for x in models if x.get("speed") is not None)
+            log(
+                f"Model leaderboard: {len(models)} scored rows, "
+                f"{priced_models} with Cost per Task, {speed_models} with Median Tokens/s"
+            )
 
         if target in {"coding", "both"}:
             # ---- Coding agent page ----
@@ -1148,6 +1163,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
                 "int": m["score"],
                 "int_cost": int_cost,
                 "int_eff": int_eff,
+                "speed": m.get("speed"),
                 "coding": c.get("score") if c else None,
                 "coding_cost": coding_cost,
                 "coding_eff": coding_eff,
@@ -1161,6 +1177,7 @@ def scrape_all(data_dir: Path, headless: bool = True, threshold: float = 0, targ
         "threshold": None,
         "model_rows": len(models),
         "model_rows_with_cost": sum(1 for x in models if x.get("cost") is not None),
+        "model_rows_with_speed": sum(1 for x in models if x.get("speed") is not None),
         "coding_rows": len(coding),
         "coding_matched_to_int_rows": matched,
         "coding_cost_source_matches": coding_cost_matches,
