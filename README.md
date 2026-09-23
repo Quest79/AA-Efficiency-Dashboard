@@ -1,4 +1,4 @@
-# AA Efficiency Dashboard v1.2.0
+# AA Efficiency Dashboard v1.2.1
 
 Live dashboard for Artificial Analysis Intelligence and Coding Agent data.
 
@@ -32,10 +32,14 @@ Refreshing Coding does not overwrite the Intelligence cache.
 
 ## UI
 
+### Sorting
+
+Every visible table column is clickable. The first click sorts ascending, the next click sorts descending, and subsequent clicks alternate. The active sort column shows ▲ or ▼. Sort state is saved separately for the Intelligence and Coding tabs.
+
 All existing creator colors, saved highlights, filters, column controls, row/content scaling, row height, and font controls are preserved.
 
 The Intelligence table also shows `TOK/S`, scraped from Artificial Analysis' `Median Tokens/s` field and paired directly from the same model leaderboard row. Models without an AA speed result show `N/A`.
 
 ## Version
 
-v1.2.0
+v1.2.1
